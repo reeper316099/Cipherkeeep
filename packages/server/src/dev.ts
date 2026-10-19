@@ -3,7 +3,12 @@ import { resolveDataDir } from './config.ts';
 import { startServer } from './index.ts';
 
 const dataDir = resolveDataDir();
-const s = await startServer({ dataDir, logger: true, port: Number(process.env.PORT ?? 0) });
+const s = await startServer({
+  dataDir,
+  logger: true,
+  port: Number(process.env.PORT ?? 0),
+  token: process.env.CIPHERKEEP_TOKEN, // dev only; the Electron shell uses a random per-launch token
+});
 console.log(`API:   ${s.url}/api/v1\nToken: ${s.token}\nData:  ${dataDir}`);
 const stop = () => void s.close().then(() => process.exit(0));
 process.on('SIGINT', stop);

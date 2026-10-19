@@ -14,18 +14,24 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json && tsc -p apps/web/tsconfig.json",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "guard": "node scripts/check-public-repo.mjs",
     "prepare": "git config core.hooksPath .githooks || true",
-    "fixtures:generate": "tsx scripts/generate-fixtures.ts"
+    "fixtures:generate": "tsx scripts/generate-fixtures.ts",
+    "dev": "concurrently -k -n api,web -c cyan,magenta \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "CIPHERKEEP_DATA_DIR=.dev-data CIPHERKEEP_TOKEN=dev-token PORT=5174 npm run dev --workspace @cipherkeep/server",
+    "dev:web": "npm run dev --workspace @cipherkeep/web",
+    "build:web": "npm run build --workspace @cipherkeep/web"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
     "@types/node": "^22.10.0",
+    "concurrently": "^9.2.5",
     "eslint": "^9.17.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
     "globals": "^15.14.0",
     "prettier": "^3.4.2",
     "tsx": "^4.23.15",

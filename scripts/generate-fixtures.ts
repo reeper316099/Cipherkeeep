@@ -429,19 +429,19 @@ put(
   `${ROOT}/${DB.projects} ${dbId.projects}.csv`,
   csv([
     ['Name', 'Type', 'Status', 'Skills Used'],
-    ['Home Dashboard', 'Script', 'In progress', 'Bash, Globs'],
+    ['Log Rotation Helper', 'Script', 'In progress', 'Bash, Globs'],
   ]),
 );
 put(
   `${ROOT}/${DB.projects} ${dbId.projects}_all.csv`,
   csv([
     ['Name', 'Type', 'Status', 'Skills Used'],
-    ['Home Dashboard', 'Script', 'In progress', 'Bash, Globs'],
+    ['Log Rotation Helper', 'Script', 'In progress', 'Bash, Globs'],
   ]),
 );
 put(
-  pagePath('projects', 'Home Dashboard'),
-  '# Home Dashboard\n\nStatus: In progress\nType: Script\n',
+  pagePath('projects', 'Log Rotation Helper'),
+  '# Log Rotation Helper\n\nStatus: In progress\nType: Script\n',
 );
 const logRow = [
   ['Name', 'Date', 'Topics Covered', 'Time Spent', 'Key Takeaway'],

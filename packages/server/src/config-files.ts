@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { CollectionName } from '@cipherkeep/shared';
+import { DEFAULT_SKILL_DOMAINS, type CollectionName } from '@cipherkeep/shared';
 
 export const SettingsSchema = z
   .object({
@@ -11,6 +11,10 @@ export const SettingsSchema = z
     vimMode: z.boolean().default(false),
     backupKeep: z.number().int().min(1).max(200).default(20),
     backupIntervalHours: z.number().min(1).max(168).default(6),
+    /** Extra regexes redacted by "export sanitized writeup". */
+    /** New cards introduced per day in study mode. */
+    studyNewPerDay: z.number().int().min(0).max(100).default(10),
+    sanitizePatterns: z.array(z.string().min(1).max(200)).max(30).default([]),
   })
   .strict();
 export type Settings = z.infer<typeof SettingsSchema>;
@@ -30,23 +34,26 @@ export const DEFAULT_CATEGORIES: Categories = {
 };
 
 export const SkillsSchema = z.array(
-  z.object({ name: z.string().min(1), weight: z.number().min(0).max(10).default(1) }),
+  z.object({
+    name: z.string().min(1),
+    weight: z.number().min(0).max(10).default(1),
+    aliases: z.array(z.string()).default([]),
+  }),
 );
-export const DEFAULT_SKILLS = [
-  'Linux',
-  'Bash',
-  'Networking',
-  'Web Security',
-  'Windows',
-  'Cryptography',
-  'Forensics',
-  'OSINT',
-  'Log Analysis',
-  'Scanning & Recon',
-  'Password Cracking',
-  'Reverse Engineering',
-  'Binary Exploitation',
-].map((name) => ({ name, weight: 1 }));
+export const DEFAULT_SKILLS = DEFAULT_SKILL_DOMAINS.map((d) => ({
+  name: d.name,
+  weight: d.weight,
+  aliases: d.aliases ?? [],
+}));
+/** v1 skills had no aliases; give known domains their default aliases so the skill map works on existing data. */
+export const migrateSkillsV1 = (data: unknown) =>
+  (data as { name: string; weight?: number; aliases?: string[] }[]).map((s) => ({
+    ...s,
+    aliases:
+      s.aliases ??
+      DEFAULT_SKILL_DOMAINS.find((d) => d.name.toLowerCase() === s.name.toLowerCase())?.aliases ??
+      [],
+  }));
 
 export const TemplateSchema = z.object({
   name: z.string(),

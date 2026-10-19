@@ -263,3 +263,55 @@ describe('wiki links', () => {
     ]);
   });
 });
+
+import { buildTitleIndex, isSafePattern, resolveWikiLink, sanitizeWriteup } from '../src/index.ts';
+
+describe('wiki-link resolution', () => {
+  const idx = buildTitleIndex([
+    { type: 'commands', id: 'c1', title: 'ls', name: 'ls' },
+    { type: 'concepts', id: 'k1', title: 'Wildcards' },
+    { type: 'notes', id: 'n1', title: 'Wildcards' },
+  ]);
+  it('resolves kinds exactly and un-prefixed titles by collection priority', () => {
+    expect(resolveWikiLink(idx, { raw: '', kind: 'cmd', target: 'LS' })).toEqual({
+      type: 'commands',
+      id: 'c1',
+    });
+    expect(resolveWikiLink(idx, { raw: '', kind: 'concept', target: 'wildcards' })).toEqual({
+      type: 'concepts',
+      id: 'k1',
+    });
+    expect(resolveWikiLink(idx, { raw: '', target: 'Wildcards' })).toEqual({
+      type: 'notes',
+      id: 'n1',
+    });
+    expect(resolveWikiLink(idx, { raw: '', target: 'ls' })).toEqual({ type: 'commands', id: 'c1' });
+    expect(resolveWikiLink(idx, { raw: '', kind: 'lab', target: 'ls' })).toBeUndefined();
+  });
+});
+
+describe('sanitizeWriteup', () => {
+  it('redacts flags, addresses, emails and credentials', () => {
+    const r = sanitizeWriteup(
+      'flag: picoCTF{s3cr3t_v4lue} at 192.168.1.20 and mail a.b@ex.org; token=abc123 Bearer abcdefgh12345678',
+    );
+    expect(r.text).toBe(
+      'flag: [FLAG REDACTED] at [IP] and mail [EMAIL]; token=[REDACTED] Bearer [REDACTED]',
+    );
+    expect(r.redactions).toBe(5);
+  });
+  it('redacts private key blocks and applies safe custom patterns only', () => {
+    const r = sanitizeWriteup(
+      '-----BEGIN RSA PRIVATE KEY-----\nabc\n-----END RSA PRIVATE KEY-----\nhost lab-7.internal',
+      ['lab-\\d+\\.internal', '(x+)+y', '['],
+    );
+    expect(r.text).toBe('[PRIVATE KEY REDACTED]\nhost [REDACTED]');
+    expect(r.invalidPatterns).toEqual(['(x+)+y', '[']);
+    expect(isSafePattern('a'.repeat(201))).toBe(false);
+  });
+  it('leaves ordinary text and version-like numbers alone', () => {
+    expect(sanitizeWriteup('Used nmap 7.94 on port 443 (version 1.2.3)').text).toBe(
+      'Used nmap 7.94 on port 443 (version 1.2.3)',
+    );
+  });
+});

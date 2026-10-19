@@ -77,6 +77,18 @@ export function detectPlaceholders(...texts: string[]): string[] {
   return [...out];
 }
 
+/** Fresh global regex matching `<x>`, `{x}`, `[x]` placeholder tokens (for UI highlighting). */
+export const placeholderRegex = (): RegExp => new RegExp(PLACEHOLDER.source, 'g');
+
+/** Replace `<x>`, `{x}`, `[x]` tokens that have a non-empty value; leave the rest untouched. */
+export function fillPlaceholders(text: string, values: Record<string, string | undefined>): string {
+  return text.replace(PLACEHOLDER, (token, a?: string, b?: string, c?: string) => {
+    const name = (a ?? b ?? c ?? '').trim();
+    const v = values[name];
+    return v ? v : token;
+  });
+}
+
 const DESTRUCTIVE = new Set([
   'rm',
   'dd',

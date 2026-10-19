@@ -9,3 +9,4 @@ coverage/
 # Real Notion export / personal data: never commit
 private-fixtures/
 *.private.*
+.dev-data/

@@ -1,7 +1,7 @@
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
 import { ZodError, z } from 'zod';
-import { APP_NAME, COLLECTIONS, type CollectionName } from '@cipherkeep/shared';
+import { APP_NAME, COLLECTIONS, sanitizeWriteup, type CollectionName } from '@cipherkeep/shared';
 import type { Context } from './context.ts';
 import {
   CategoriesSchema,
@@ -10,10 +10,11 @@ import {
   SkillsSchema,
   TemplateSchema,
 } from './config-files.ts';
+import { buildOverview } from './overview.ts';
 import type { ListQuery } from './repo.ts';
 import { queryEntities } from './repo.ts';
 import { AppError, notFound } from './util.ts';
-import { atomicWriteJson } from '@cipherkeep/jsonstore';
+import { atomicWriteFile, atomicWriteJson } from '@cipherkeep/jsonstore';
 import { promises as fs } from 'node:fs';
 import multipart from '@fastify/multipart';
 import { exportCsv, exportJson, exportMarkdown, csvTemplate } from './export.ts';
@@ -431,6 +432,139 @@ export async function buildApp({
           JSON.stringify(exportJson(ctx, { includePrivate: q.includePrivate === 'true' }), null, 2),
         );
       });
+
+      // ---- links, backlinks, graph ----
+      api.get('/entities/:id/backlinks', async (req) =>
+        ctx.links.backlinks((req.params as { id: string }).id),
+      );
+      api.get('/entities/:id/links', async (req) =>
+        ctx.links.outgoing((req.params as { id: string }).id),
+      );
+      api.get('/graph', async (req) => {
+        const q = z
+          .object({
+            types: z.string().optional(),
+            includeOrphans: z.enum(['true', 'false']).optional(),
+          })
+          .parse(req.query);
+        return ctx.links.graph({
+          types: q.types ? q.types.split(',').map(collectionParam) : undefined,
+          includeOrphans: q.includeOrphans === 'true',
+        });
+      });
+
+      // ---- sanitized writeup export ----
+      api.post('/labs/:id/sanitized-writeup', async (req) => {
+        const { id } = req.params as { id: string };
+        const lab = ctx.repos.labs.get(id);
+        if (!lab) throw notFound('labs', id);
+        return sanitizeWriteup(String(lab.writeup ?? ''), ctx.settings.data.sanitizePatterns);
+      });
+
+      // ---- attachments (images pasted into notes / imported from Notion) ----
+      const IMAGE_TYPES: Record<string, string> = {
+        png: 'image/png',
+        jpg: 'image/jpeg',
+        jpeg: 'image/jpeg',
+        gif: 'image/gif',
+        webp: 'image/webp',
+        pdf: 'application/pdf',
+      };
+      const magicOk = (ext: string, b: Buffer) =>
+        (ext === 'png' && b.subarray(1, 4).toString() === 'PNG') ||
+        ((ext === 'jpg' || ext === 'jpeg') && b[0] === 0xff && b[1] === 0xd8) ||
+        (ext === 'gif' && b.subarray(0, 3).toString() === 'GIF') ||
+        (ext === 'webp' && b.subarray(8, 12).toString() === 'WEBP');
+      api.get('/attachments/:hash/:file', async (req, reply) => {
+        const { hash, file } = req.params as { hash: string; file: string };
+        if (
+          !/^[0-9a-f]{8}$/.test(hash) ||
+          !/^[\w][\w. -]{0,120}$/.test(file) ||
+          file.includes('..')
+        )
+          throw notFound('attachment', file);
+        const ext = file.split('.').pop()!.toLowerCase();
+        let data: Buffer;
+        try {
+          data = await fs.readFile(ctx.store.abs(`attachments/${hash}/${file}`));
+        } catch {
+          throw notFound('attachment', file);
+        }
+        return reply
+          .header('content-type', IMAGE_TYPES[ext] ?? 'application/octet-stream')
+          .header('x-content-type-options', 'nosniff')
+          .header(
+            'content-security-policy',
+            "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+          )
+          .header('cache-control', 'private, max-age=3600')
+          .send(data);
+      });
+      api.post('/attachments', async (req, reply) => {
+        const f = await req.file({ limits: { fileSize: 10 * 1024 * 1024 } });
+        if (!f) throw new AppError(400, 'VALIDATION', 'No file uploaded');
+        const buf = await f.toBuffer();
+        if (f.file.truncated) throw new AppError(413, 'TOO_LARGE', 'Image larger than 10 MB');
+        const ext = (f.filename.split('.').pop() ?? '').toLowerCase();
+        if (!['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext) || !magicOk(ext, buf)) {
+          throw new AppError(
+            415,
+            'UNSUPPORTED',
+            'Only PNG, JPEG, GIF and WebP images can be attached',
+          );
+        }
+        const name =
+          f.filename
+            .replace(/[^\w. -]/g, '_')
+            .replace(/^[._ -]+/, '')
+            .slice(-80) || `image.${ext}`;
+        const hash = createHash('sha1').update(buf).digest('hex').slice(0, 8);
+        await atomicWriteFile(ctx.store.abs(`attachments/${hash}/${name}`), buf);
+        return reply
+          .status(201)
+          .send({ url: `ck://attachments/${hash}/${encodeURIComponent(name)}` });
+      });
+
+      // ---- study & stats ----
+      const TzQuery = z.object({ tzOffset: z.coerce.number().int().min(-840).max(840).default(0) });
+      const StudyCollection = z.enum(['commands', 'concepts']);
+      api.get('/study/queue', async (req) => {
+        const q = TzQuery.extend({
+          collection: StudyCollection.optional(),
+          limit: z.coerce.number().int().min(1).max(200).default(20),
+          onlyId: z.string().optional(),
+        }).parse(req.query);
+        return ctx.study.queue({
+          collection: q.collection,
+          limit: q.limit,
+          onlyId: q.onlyId,
+          tzOffset: q.tzOffset,
+        });
+      });
+      api.post('/study/answer', async (req) => {
+        const b = z
+          .object({
+            id: z.string().min(1),
+            rating: z.enum(['again', 'hard', 'good', 'easy']),
+            collection: StudyCollection.optional(),
+            ms: z.number().int().min(0).max(3_600_000).optional(),
+            cardType: z.string().max(20).optional(),
+          })
+          .parse(req.body);
+        return ctx.study.answer(b);
+      });
+      api.get('/study/stats', async (req) =>
+        ctx.study.stats({ tzOffset: TzQuery.parse(req.query).tzOffset }),
+      );
+      api.get('/stats/overview', async (req) =>
+        buildOverview(ctx, { tzOffset: TzQuery.parse(req.query).tzOffset }),
+      );
+      api.get('/questions', async (req) =>
+        ctx.study.questions(
+          z.object({ includeDone: z.enum(['true', 'false']).optional() }).parse(req.query)
+            .includeDone === 'true',
+        ),
+      );
 
       // ---- activity ----
       api.get('/activity/:month', async (req) =>

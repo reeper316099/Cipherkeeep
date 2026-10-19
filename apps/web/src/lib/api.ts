@@ -1,0 +1,126 @@
+import type { Command, Concept, Lab } from '@cipherkeep/shared';
+
+declare global {
+  interface Window {
+    /** Injected by the Electron preload via contextBridge. Absent in the dev browser (Vite proxies /api). */
+    cipherkeep?: { apiBase: string; token: string };
+  }
+}
+
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+    readonly requestId?: string,
+    readonly details?: unknown,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
+function base(): { url: string; headers: Record<string, string> } {
+  const b = window.cipherkeep;
+  return b
+    ? { url: `${b.apiBase}/api/v1`, headers: { authorization: `Bearer ${b.token}` } }
+    : { url: '/api/v1', headers: {} };
+}
+
+export async function api<T>(
+  path: string,
+  init: RequestInit & { json?: unknown } = {},
+): Promise<T> {
+  const { url, headers } = base();
+  const h: Record<string, string> = {
+    ...headers,
+    ...(init.headers as Record<string, string> | undefined),
+  };
+  let body = init.body;
+  if (init.json !== undefined) {
+    h['content-type'] = 'application/json';
+    body = JSON.stringify(init.json);
+  }
+  const res = await fetch(url + path, { ...init, headers: h, body });
+  if (res.status === 204) return undefined as T;
+  const text = await res.text();
+  const data = text ? (JSON.parse(text) as unknown) : null;
+  if (!res.ok) {
+    const e = (
+      data as {
+        error?: { code: string; message: string; requestId?: string; details?: unknown };
+      } | null
+    )?.error;
+    throw new ApiError(
+      res.status,
+      e?.code ?? 'ERROR',
+      e?.message ?? res.statusText,
+      e?.requestId,
+      e?.details,
+    );
+  }
+  return data as T;
+}
+
+/** Fetch a binary resource (attachments) through the authenticated API. */
+export async function apiBlob(path: string): Promise<Blob> {
+  const { url, headers } = base();
+  const res = await fetch(url + path, { headers });
+  if (!res.ok) throw new ApiError(res.status, 'ERROR', res.statusText);
+  return res.blob();
+}
+
+export interface ListResponse<T> {
+  items: T[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+/** Every entity in a collection (pages of 500). */
+export async function listAll<T>(collection: string): Promise<T[]> {
+  const out: T[] = [];
+  for (let offset = 0; ; offset += 500) {
+    const page = await api<ListResponse<T>>(
+      `/${collection}?limit=500&offset=${offset}&archived=all&sort=title`,
+    );
+    out.push(...page.items);
+    if (out.length >= page.total || page.items.length === 0) return out;
+  }
+}
+
+export type CommandEntity = Command;
+export type ConceptEntity = Concept;
+export type LabEntity = Lab;
+
+export interface SearchHit {
+  type: string;
+  id: string;
+  title: string;
+  category: string;
+  score: number;
+  highlight: string;
+}
+export interface SearchResponse {
+  hits: SearchHit[];
+  facets: Record<string, number>;
+}
+
+export interface Settings {
+  theme: 'dark' | 'light' | 'system';
+  accent: string;
+  density: 'comfortable' | 'compact';
+  storeFlagsInLabs: boolean;
+  blurSensitive: boolean;
+  vimMode: boolean;
+  backupKeep: number;
+  backupIntervalHours: number;
+  sanitizePatterns: string[];
+  studyNewPerDay: number;
+}
+
+export interface Meta {
+  appName: string;
+  collections: string[];
+  counts: Record<string, number>;
+}

@@ -27,6 +27,21 @@ export class ActivityLog {
     });
   }
 
+  /** Events whose UTC month falls between the two `YYYY-MM-DD` days (inclusive); callers bucket by their own timezone. */
+  async range(fromDay: string, toDay: string): Promise<ActivityEvent[]> {
+    const out: ActivityEvent[] = [];
+    let [y, m] = fromDay.split('-').map(Number) as [number, number];
+    const [ty, tm] = toDay.split('-').map(Number) as [number, number];
+    while (y < ty || (y === ty && m <= tm)) {
+      out.push(...(await this.month(`${y}-${String(m).padStart(2, '0')}`)));
+      if (++m > 12) {
+        m = 1;
+        y++;
+      }
+    }
+    return out;
+  }
+
   async month(yyyyMm: string): Promise<ActivityEvent[]> {
     if (!/^\d{4}-\d{2}$/.test(yyyyMm)) return [];
     try {

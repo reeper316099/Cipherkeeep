@@ -16,6 +16,7 @@ import {
   CategoriesSchema,
   DEFAULT_CATEGORIES,
   DEFAULT_SKILLS,
+  migrateSkillsV1,
   SettingsSchema,
   SkillsSchema,
   type Categories,
@@ -23,7 +24,9 @@ import {
 } from './config-files.ts';
 import { NoteRepo } from './notes.ts';
 import { JsonRepo, type Repo } from './repo.ts';
+import { LinkIndex } from './links.ts';
 import { SearchIndex } from './search.ts';
+import { StudyService } from './study.ts';
 
 export const DATA_VERSION = 1;
 
@@ -33,6 +36,8 @@ export interface Context {
   backups: BackupManager;
   repos: Record<CollectionName, Repo>;
   search: SearchIndex;
+  links: LinkIndex;
+  study: StudyService;
   activity: ActivityLog;
   settings: JsonFile<Settings>;
   categories: JsonFile<Categories>;
@@ -78,9 +83,10 @@ export async function createContext(opts: { dataDir: string; watch?: boolean }):
       validator: CategoriesSchema,
     });
     const skills = await store.open('config/skills.json', {
-      version: 1,
+      version: 2,
       defaults: () => DEFAULT_SKILLS,
       validator: SkillsSchema,
+      migrations: { 1: migrateSkillsV1 },
     });
 
     const repos = {} as Record<CollectionName, Repo>;
@@ -99,17 +105,21 @@ export async function createContext(opts: { dataDir: string; watch?: boolean }):
     }
     if (opts.watch ?? true) await store.watch();
 
+    const activity = new ActivityLog(store);
+    const study = new StudyService({ store, repos, activity, settings });
     return {
       dataDir,
       store,
       backups,
       repos,
       search,
+      links: new LinkIndex(repos),
       settings,
       categories,
       skills,
       bus,
-      activity: new ActivityLog(store),
+      activity,
+      study,
       async reloadAll() {
         for (const name of COLLECTIONS) await repos[name].reloadAll();
       },
