@@ -33,9 +33,11 @@ export interface Repo extends EventEmitter<RepoEvents> {
   init(): Promise<void>;
   all(): Entity[];
   get(id: string): Entity | undefined;
-  create(input: unknown): Promise<Entity>;
+  create(input: unknown, opts?: { id?: string }): Promise<Entity>;
   patch(id: string, input: unknown): Promise<Entity>;
   remove(id: string): Promise<void>;
+  /** Put an entity back exactly as given (undo); no timestamp changes. */
+  restore(entity: Entity): Promise<void>;
   reloadAll(): Promise<void>;
   close?(): Promise<void>;
 }
@@ -88,7 +90,7 @@ function prepareCreate(name: CollectionName, input: unknown): unknown {
   return o;
 }
 
-function finishCreate(parsed: Record<string, unknown>): Entity {
+function finishCreate(parsed: Record<string, unknown>, id?: string): Entity {
   const now = new Date().toISOString();
   const title = String(parsed.title ?? '');
   if (!title.trim()) throw new AppError(400, 'VALIDATION', 'title is required');
@@ -96,7 +98,7 @@ function finishCreate(parsed: Record<string, unknown>): Entity {
     ...parsed,
     title,
     slug: parsed.slug ? String(parsed.slug) : slugify(title),
-    id: ulid(),
+    id: id ?? ulid(),
     createdAt: now,
     updatedAt: now,
   } as Entity;
@@ -177,9 +179,9 @@ export class JsonRepo extends EventEmitter<RepoEvents> implements Repo {
     this.emit('rebuild');
   }
 
-  async create(input: unknown): Promise<Entity> {
+  async create(input: unknown, opts?: { id?: string }): Promise<Entity> {
     const parsed = this.schemas.create.parse(prepareCreate(this.name, input));
-    const entity = finishCreate(parsed);
+    const entity = finishCreate(parsed, opts?.id);
     const f = await this.shard(shardOf(this.name, entity));
     await f.update((d) => void d.items.push(entity));
     this.reindex(f.rel);
@@ -195,6 +197,14 @@ export class JsonRepo extends EventEmitter<RepoEvents> implements Repo {
     const merged = { ...cur.e, ...patch, id, createdAt: cur.e.createdAt } as Entity;
     if (patch.title && !patch.slug) merged.slug = slugify(String(patch.title));
     merged.updatedAt = new Date().toISOString();
+    await this.replace(cur, merged);
+    const saved = this.get(id)!;
+    this.emit('upsert', saved);
+    return saved;
+  }
+
+  private async replace(cur: { e: Entity; rel: string }, merged: Entity): Promise<void> {
+    const id = merged.id;
     const newRel = shardOf(this.name, merged);
     const oldFile = this.shards.get(cur.rel)!;
     if (newRel === cur.rel) {
@@ -208,9 +218,17 @@ export class JsonRepo extends EventEmitter<RepoEvents> implements Repo {
       this.reindex(cur.rel);
     }
     this.reindex(newRel);
-    const saved = this.get(id)!;
-    this.emit('upsert', saved);
-    return saved;
+  }
+
+  async restore(entity: Entity): Promise<void> {
+    const cur = this.index.get(entity.id);
+    if (cur) await this.replace(cur, entity);
+    else {
+      const f = await this.shard(shardOf(this.name, entity));
+      await f.update((d) => void d.items.push(entity));
+      this.reindex(f.rel);
+    }
+    this.emit('upsert', this.get(entity.id)!);
   }
 
   async remove(id: string): Promise<void> {

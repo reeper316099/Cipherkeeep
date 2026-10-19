@@ -11,9 +11,12 @@
   "dependencies": {
     "@cipherkeep/jsonstore": "*",
     "@cipherkeep/shared": "*",
+    "@fastify/multipart": "^9.4.0",
+    "adm-zip": "^0.5.18",
     "chokidar": "^4.0.3",
     "fastify": "^5.2.0",
     "minisearch": "^7.1.1",
+    "papaparse": "^5.7.0",
     "ulid": "^2.3.0",
     "yaml": "^2.7.0",
     "zod": "^3.24.1"
@@ -22,6 +25,8 @@
     "dev": "tsx src/dev.ts"
   },
   "devDependencies": {
+    "@types/adm-zip": "^0.5.8",
+    "@types/papaparse": "^5.5.2",
     "tsx": "^4.23.15"
   }
 }

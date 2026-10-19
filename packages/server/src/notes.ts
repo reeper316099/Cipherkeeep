@@ -155,7 +155,7 @@ export class NoteRepo extends EventEmitter<RepoEvents> implements Repo {
     this.emit('rebuild');
   }
 
-  async create(input: unknown): Promise<Entity> {
+  async create(input: unknown, opts?: { id?: string }): Promise<Entity> {
     if (!input || typeof input !== 'object')
       throw new AppError(400, 'VALIDATION', 'Body must be an object');
     const parsed = this.schemas.create.parse(input) as Record<string, unknown>;
@@ -169,7 +169,7 @@ export class NoteRepo extends EventEmitter<RepoEvents> implements Repo {
       title,
       folder,
       slug: path.posix.basename(rel, '.md'),
-      id: ulid(),
+      id: opts?.id ?? ulid(),
       createdAt: now,
       updatedAt: now,
     } as Note;
@@ -198,6 +198,20 @@ export class NoteRepo extends EventEmitter<RepoEvents> implements Repo {
     this.byId.set(id, { e: merged, rel });
     this.emit('upsert', merged as Entity);
     return merged as Entity;
+  }
+
+  async restore(entity: Entity): Promise<void> {
+    const note = entity as unknown as Note;
+    const cur = this.byId.get(note.id);
+    const rel = this.uniqueRel(note.folder, note.slug, note.id);
+    await this.writeFile(note, rel);
+    if (cur && cur.rel !== rel) {
+      const old = path.join(this.root, cur.rel);
+      this.written.delete(old);
+      await fs.rm(old, { force: true });
+    }
+    this.byId.set(note.id, { e: note, rel });
+    this.emit('upsert', note as Entity);
   }
 
   async remove(id: string): Promise<void> {

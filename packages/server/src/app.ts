@@ -15,6 +15,18 @@ import { queryEntities } from './repo.ts';
 import { AppError, notFound } from './util.ts';
 import { atomicWriteJson } from '@cipherkeep/jsonstore';
 import { promises as fs } from 'node:fs';
+import multipart from '@fastify/multipart';
+import { exportCsv, exportJson, exportMarkdown, csvTemplate } from './export.ts';
+import {
+  PreviewStore,
+  buildPlan,
+  commitPlan,
+  fromPath,
+  fromUpload,
+  listImports,
+  undoImport,
+  type VirtualFs,
+} from './import/index.ts';
 
 const digest = (s: string) => createHash('sha256').update(s).digest();
 
@@ -105,8 +117,12 @@ export async function buildApp({
       .send({ error: { code: 'NOT_FOUND', message: 'No such route', requestId: req.id } }),
   );
 
+  const previews = new PreviewStore();
   await app.register(
     async (api) => {
+      await api.register(multipart, {
+        limits: { fileSize: 500 * 1024 * 1024, files: 1, fields: 10 },
+      });
       api.get('/health', async () => ({ status: 'ok' }));
       api.get('/meta', async () => ({
         appName: APP_NAME,
@@ -281,6 +297,139 @@ export async function buildApp({
         await ctx.backups.restore(b.name);
         await ctx.reloadAll();
         return { restored: b.name };
+      });
+
+      // ---- import / export ----
+      const MappingSchema = z.record(z.union([z.enum(COLLECTIONS), z.literal('skip')])).optional();
+      api.post('/import/preview', async (req) => {
+        let vfs: VirtualFs;
+        let name: string;
+        let zip: Buffer | undefined;
+        let collection: CollectionName | undefined;
+        let mapping: z.infer<typeof MappingSchema>;
+        if (req.isMultipart()) {
+          const file = await req.file();
+          if (!file) throw new AppError(400, 'VALIDATION', 'No file uploaded');
+          const buf = await file.toBuffer();
+          const fields = file.fields as Record<string, { value?: string } | undefined>;
+          if (fields.collection?.value) collection = collectionParam(fields.collection.value);
+          if (fields.mapping?.value)
+            mapping = MappingSchema.parse(JSON.parse(fields.mapping.value));
+          name = file.filename;
+          vfs = fromUpload(name, buf);
+          if (/\.zip$/i.test(name)) zip = buf;
+        } else {
+          const b = z
+            .object({
+              path: z.string().min(1),
+              collection: z.enum(COLLECTIONS).optional(),
+              mapping: MappingSchema,
+            })
+            .parse(req.body);
+          ({ vfs, name } = await fromPath(b.path));
+          collection = b.collection;
+          mapping = b.mapping;
+        }
+        const plan = buildPlan(ctx, vfs, { sourceName: name, collection, mapping });
+        const previewId = previews.put(plan, vfs, zip, name);
+        const counts: Record<string, number> = {};
+        for (const it of plan.items) counts[it.collection] = (counts[it.collection] ?? 0) + 1;
+        return {
+          previewId,
+          kind: plan.kind,
+          sourceName: plan.sourceName,
+          counts,
+          databases: plan.databases,
+          templates: plan.templates.map((t) => ({
+            collection: t.collection,
+            name: t.template.name,
+            sections: t.template.sections.length,
+          })),
+          attachments: plan.attachments.length,
+          warnings: plan.warnings,
+          items: plan.items.map((i) => ({
+            ref: i.ref,
+            collection: i.collection,
+            title: i.title,
+            source: i.source,
+            warnings: i.warnings,
+            skipByDefault: i.skipByDefault,
+            alternatives: i.alternatives ? Object.keys(i.alternatives) : undefined,
+          })),
+        };
+      });
+      api.post('/import/commit', async (req) => {
+        const b = z
+          .object({
+            previewId: z.string(),
+            strategy: z
+              .enum(['skip', 'update-empty-only', 'overwrite', 'keep-both'])
+              .default('update-empty-only'),
+            overrides: z.record(z.string()).optional(),
+          })
+          .parse(req.body);
+        const p = previews.get(b.previewId);
+        const report = await commitPlan(
+          ctx,
+          p.plan,
+          { strategy: b.strategy, overrides: b.overrides },
+          { vfs: p.vfs, zip: p.zip, zipName: p.zipName },
+        );
+        previews.drop(b.previewId);
+        return report;
+      });
+      api.post('/import/undo/:id', async (req) =>
+        undoImport(ctx, (req.params as { id: string }).id),
+      );
+      api.get('/imports', async () => listImports(ctx));
+
+      const OptsQuery = z.object({ includePrivate: z.enum(['true', 'false']).optional() });
+      const download = (
+        reply: FastifyReply,
+        type: string,
+        filename: string,
+        body: Buffer | string,
+      ) =>
+        reply
+          .header('content-type', type)
+          .header('content-disposition', `attachment; filename="${filename}"`)
+          .send(body);
+      const stamp = () => new Date().toISOString().slice(0, 10);
+      api.get('/export/markdown', async (req, reply) => {
+        const q = OptsQuery.parse(req.query);
+        return download(
+          reply,
+          'application/zip',
+          `${APP_NAME.toLowerCase()}-vault-${stamp()}.zip`,
+          await exportMarkdown(ctx, { includePrivate: q.includePrivate === 'true' }),
+        );
+      });
+      api.get('/export/csv', async (req, reply) => {
+        const q = OptsQuery.extend({ collection: z.enum(COLLECTIONS) }).parse(req.query);
+        return download(
+          reply,
+          'text/csv; charset=utf-8',
+          `${q.collection}-${stamp()}.csv`,
+          exportCsv(ctx, q.collection, { includePrivate: q.includePrivate === 'true' }),
+        );
+      });
+      api.get('/export/csv-template', async (req, reply) => {
+        const q = z.object({ collection: z.enum(COLLECTIONS) }).parse(req.query);
+        return download(
+          reply,
+          'text/csv; charset=utf-8',
+          `${q.collection}-template.csv`,
+          csvTemplate(q.collection),
+        );
+      });
+      api.get('/export/json', async (req, reply) => {
+        const q = OptsQuery.parse(req.query);
+        return download(
+          reply,
+          'application/json',
+          `${APP_NAME.toLowerCase()}-backup-${stamp()}.json`,
+          JSON.stringify(exportJson(ctx, { includePrivate: q.includePrivate === 'true' }), null, 2),
+        );
       });
 
       // ---- activity ----

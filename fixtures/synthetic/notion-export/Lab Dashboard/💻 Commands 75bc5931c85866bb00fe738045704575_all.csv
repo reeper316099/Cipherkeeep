@@ -1,0 +1,16 @@
+﻿Commands,Category,Syntax,Example,Explanation,Used In
+ls,File System,ls \[flags\] \[directory\],ls -al,list directory entries,Ghost Lab (Lab%20Dashboard/%F0%9F%A7%AA%20Labs/Ghost%20Lab%20c4745785181de931cfd5bd79294cb168.md)
+pwd,File System,pwd,pwd,print working directory,
+cd,File System,cd \[directory\],cd ~,change directory,
+file,File System,file \[filename\],file photo.jpg,detect file type,
+less,File System,less \[filename\],less log.txt,page through a file,
+mkdir,File System,mkdir \[directory\],mkdir demo,create folders,
+cp,File System,cp \[source\] \[destination\],cp a.txt b.txt,copy files,
+mv,File System,mv \[source\] \[destination\],mv a.txt dir,move or rename,
+rm,File System,rm \[target\],rm old.txt,delete files,
+ln,File System,ln \[target\] \[link\],ln -s real alias,make links,
+df,General,df,df,disk space,
+free,General,free,free,memory usage,
+exit,General,exit,exit,leave the shell,
+type,General,type \[command\],type ls,how a name resolves,
+which,General,which \[command\],which ls,locate an executable,
