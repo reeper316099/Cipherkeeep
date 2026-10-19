@@ -81,6 +81,7 @@ export class JsonStore extends EventEmitter<StoreEvents> {
     this.watcher = chokidar.watch(this.dir, {
       ignoreInitial: true,
       ignored: (p) => path.basename(p).startsWith('.'),
+      ignorePermissionErrors: true,
       awaitWriteFinish: { stabilityThreshold: 80, pollInterval: 20 },
     });
     const onChange = (p: string) => {
@@ -89,7 +90,13 @@ export class JsonStore extends EventEmitter<StoreEvents> {
       if (f) void f.reloadExternal();
     };
     this.watcher.on('change', onChange).on('add', onChange);
-    await new Promise<void>((resolve) => this.watcher!.once('ready', () => resolve()));
+    // A path that cannot be watched (a socket, a permission error) must never crash or stall startup.
+    this.watcher.on('error', () => undefined);
+    await new Promise<void>((resolve) => {
+      const done = () => resolve();
+      this.watcher!.once('ready', done);
+      setTimeout(done, 5000).unref();
+    });
   }
 
   async close(): Promise<void> {

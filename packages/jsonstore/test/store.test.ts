@@ -192,3 +192,26 @@ describe('instance lock', () => {
     await again.release();
   });
 });
+
+describe('watching a folder with unwatchable files', () => {
+  it.skipIf(process.platform === 'win32')(
+    'starts even when the data folder contains a unix socket (Electron’s SingletonSocket)',
+    async () => {
+      const net = await import('node:net');
+      const sock = path.join(dir, 'SingletonSocket');
+      const srv = net.createServer().listen(sock);
+      await new Promise((r) => srv.once('listening', r));
+      try {
+        const store = new JsonStore(dir);
+        const f = await store.open('a.json', opts());
+        const t0 = Date.now();
+        await store.watch(); // must resolve promptly instead of hanging or throwing
+        expect(Date.now() - t0).toBeLessThan(4000);
+        await f.update((d) => void d.items.push({ id: 'x', n: 1 }));
+        await store.close();
+      } finally {
+        srv.close();
+      }
+    },
+  );
+});

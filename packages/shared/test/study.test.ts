@@ -238,7 +238,10 @@ describe('threat level', () => {
     expect(threatLevel({ daysSinceActivity: 2, streak: 0, overdue: 0 }).level).toBe('MODERATE');
     expect(threatLevel({ daysSinceActivity: 5, streak: 0, overdue: 0 }).level).toBe('ELEVATED');
     expect(threatLevel({ daysSinceActivity: 9, streak: 0, overdue: 0 }).level).toBe('HIGH');
-    expect(threatLevel({ daysSinceActivity: null, streak: 0, overdue: 0 }).level).toBe('HIGH');
+    expect(threatLevel({ daysSinceActivity: null, streak: 0, overdue: 0 }).level).toBe('MODERATE'); // content but never practised
+    expect(
+      threatLevel({ daysSinceActivity: null, streak: 0, overdue: 0, empty: true }),
+    ).toMatchObject({ level: 'LOW', score: 0 }); // brand-new profile
   });
   it('rewards streaks (capped) and never goes negative; explains itself', () => {
     expect(threatLevel({ daysSinceActivity: 2, streak: 14, overdue: 0 }).score).toBe(0);

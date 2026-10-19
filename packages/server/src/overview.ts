@@ -190,7 +190,12 @@ export async function buildOverview(ctx: Context, opts: { now?: Date; tzOffset?:
       name: 'HQ',
       status: 'ACTIVE',
       mode: 'LEARNING',
-      threat: threatLevel({ daysSinceActivity: daysSince, streak: streak.current, overdue }),
+      threat: threatLevel({
+        daysSinceActivity: daysSince,
+        streak: streak.current,
+        overdue,
+        empty: COLLECTIONS.every((c) => ctx.repos[c].all().length === 0),
+      }),
     },
     counts: Object.fromEntries(
       COLLECTIONS.map((c) => [c, ctx.repos[c].all().filter((e) => !e.archived).length]),

@@ -11,15 +11,28 @@ export interface Threat {
 
 /**
  * THREAT LEVEL = how stale your practice is (a playful but real nudge).
- *   score = 10 × days since last activity (30 if never) + 2 × cards overdue by > 3 days (max 20) − 3 × streak days (max 14)
+ *   score = 10 × days since last activity (3 if you have content but no activity yet; an empty profile is simply LOW) + 2 × cards overdue by > 3 days (max 20) − 3 × streak days (max 14)
  *   LOW < 20 · MODERATE 20–49 · ELEVATED 50–89 · HIGH ≥ 90
  */
 export function threatLevel(input: {
   daysSinceActivity: number | null;
   streak: number;
   overdue: number;
+  /** A brand-new profile with no content: nothing can be stale. */
+  empty?: boolean;
 }): Threat {
-  const days = input.daysSinceActivity ?? 30;
+  if (input.empty) {
+    return {
+      level: 'LOW',
+      score: 0,
+      daysSinceActivity: null,
+      streak: 0,
+      overdue: 0,
+      explanation:
+        'LOW (score 0): nothing to practise yet. Add or import some content and this starts tracking your practice.',
+    };
+  }
+  const days = input.daysSinceActivity ?? 3; // content but no activity yet: a nudge (MODERATE), not an alarm
   const raw = days * 10 + Math.min(input.overdue, 20) * 2 - Math.min(input.streak, 14) * 3;
   const score = Math.max(0, Math.round(raw));
   const level: ThreatLevel =

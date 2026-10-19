@@ -3,3 +3,7 @@ dist
 private-fixtures
 package-lock.json
 fixtures/synthetic
+apps/desktop/web
+release
+playwright-report
+test-results

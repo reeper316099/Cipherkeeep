@@ -3,9 +3,11 @@ on:
   push:
     branches: [main]
   pull_request:
+
 jobs:
   verify:
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
@@ -20,3 +22,32 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
+
+  # Drives the real Electron app (built, not packaged): first run, import, study, restart, security checks.
+  e2e:
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run desktop:build
+      - name: e2e (Linux, virtual display)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npx playwright test
+      - name: e2e
+        if: runner.os != 'Linux'
+        run: npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-traces-${{ matrix.os }}
+          path: test-results/
+          retention-days: 7

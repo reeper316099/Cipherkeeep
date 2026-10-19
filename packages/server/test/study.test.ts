@@ -215,6 +215,28 @@ describe('overview (dashboard data)', () => {
     try {
       const { mkdir } = await import('node:fs/promises');
       await mkdir(path.join(dir, 'activity'), { recursive: true });
+      await mkdir(path.join(dir, 'data/commands'), { recursive: true });
+      const stamp = '2026-01-01T00:00:00.000Z';
+      await writeFile(
+        path.join(dir, 'data/commands/general.json'),
+        JSON.stringify({
+          schemaVersion: 1,
+          data: {
+            items: [
+              {
+                id: '01HZZZZZZZZZZZZZZZZZZZZZZZ',
+                title: 'x',
+                slug: 'x',
+                name: 'x',
+                category: 'General',
+                createdAt: stamp,
+                updatedAt: stamp,
+              },
+            ],
+          },
+        }),
+      ); // content exists, so the profile is not "empty"
+
       const old = new Date(Date.now() - 6 * 86_400_000).toISOString();
       await writeFile(
         path.join(dir, 'activity', `${old.slice(0, 7)}.jsonl`),

@@ -16,6 +16,7 @@ import { queryEntities } from './repo.ts';
 import { AppError, notFound } from './util.ts';
 import { atomicWriteFile, atomicWriteJson } from '@cipherkeep/jsonstore';
 import { promises as fs } from 'node:fs';
+import path from 'node:path';
 import multipart from '@fastify/multipart';
 import { exportCsv, exportJson, exportMarkdown, csvTemplate } from './export.ts';
 import {
@@ -29,11 +30,67 @@ import {
   type VirtualFs,
 } from './import/index.ts';
 
+export const UI_CSP =
+  "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+const MIME: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2',
+  '.woff': 'font/woff',
+  '.txt': 'text/plain; charset=utf-8',
+};
+
+/** Serves a file from `root` (never outside it); extension-less paths fall back to index.html (client-side routes). */
+async function serveStatic(root: string, url: string, reply: FastifyReply): Promise<boolean> {
+  let pathname: string;
+  try {
+    pathname = decodeURIComponent(url.split('?')[0]!.split('#')[0]!);
+  } catch {
+    return false;
+  }
+  if (pathname.includes('\0')) return false;
+  const base = path.resolve(root);
+  let file = path.resolve(base, '.' + path.posix.normalize('/' + pathname));
+  if (file !== base && !file.startsWith(base + path.sep)) return false;
+  let ext = path.extname(file).toLowerCase();
+  if (!ext || pathname.endsWith('/')) {
+    file = path.join(base, 'index.html');
+    ext = '.html';
+  }
+  let data: Buffer;
+  try {
+    data = await fs.readFile(file);
+  } catch {
+    return false;
+  }
+  reply
+    .header('content-type', MIME[ext] ?? 'application/octet-stream')
+    .header('content-security-policy', UI_CSP)
+    .header('x-content-type-options', 'nosniff')
+    .header('referrer-policy', 'no-referrer')
+    .header(
+      'cache-control',
+      file.includes(`${path.sep}assets${path.sep}`)
+        ? 'public, max-age=31536000, immutable'
+        : 'no-store',
+    );
+  await reply.send(data);
+  return true;
+}
+
 const digest = (s: string) => createHash('sha256').update(s).digest();
 
 export interface AppOptions {
   ctx: Context;
   token: string;
+  /** Built web bundle to serve at `/` (the desktop app). The API under /api still needs the bearer token. */
+  staticDir?: string;
   /** Extra Host header values accepted (the bound host:port is always accepted). */
   logger?: boolean;
 }
@@ -70,11 +127,14 @@ const collectionParam = (v: unknown): CollectionName => {
 export async function buildApp({
   ctx,
   token,
+  staticDir,
   logger = false,
 }: AppOptions): Promise<FastifyInstance> {
   const want = digest(token);
   const app = Fastify({
     genReqId: () => randomUUID(),
+    // Open SSE streams must not stall shutdown (app quit / data-folder switch).
+    forceCloseConnections: true,
     logger: logger
       ? {
           level: 'info',
@@ -95,6 +155,8 @@ export async function buildApp({
     if (!['127.0.0.1', 'localhost', '[::1]'].includes(host)) {
       throw new AppError(403, 'BAD_HOST', 'Forbidden host');
     }
+    // The UI shell is public on loopback; everything under /api needs the per-launch token.
+    if (staticDir && !req.url.startsWith('/api/')) return;
     const m = /^Bearer (.+)$/.exec(req.headers.authorization ?? '');
     if (!m || !timingSafeEqual(digest(m[1]!), want)) {
       throw new AppError(401, 'UNAUTHORIZED', 'Missing or invalid bearer token');
@@ -112,11 +174,18 @@ export async function buildApp({
     req.log.error({ err: { name: (err as Error).name, code: e.code } }, 'unhandled error');
     return body(500, 'INTERNAL', 'Internal error');
   });
-  app.setNotFoundHandler((req, reply) =>
-    reply
+  app.setNotFoundHandler(async (req, reply) => {
+    if (
+      staticDir &&
+      (req.method === 'GET' || req.method === 'HEAD') &&
+      !req.url.startsWith('/api/')
+    ) {
+      if (await serveStatic(staticDir, req.url, reply)) return;
+    }
+    return reply
       .status(404)
-      .send({ error: { code: 'NOT_FOUND', message: 'No such route', requestId: req.id } }),
-  );
+      .send({ error: { code: 'NOT_FOUND', message: 'No such route', requestId: req.id } });
+  });
 
   const previews = new PreviewStore();
   await app.register(
@@ -193,7 +262,7 @@ export async function buildApp({
           .object({
             q: z.string().default(''),
             type: z.string().optional(),
-            limit: z.coerce.number().int().min(1).max(200).default(50),
+            limit: z.coerce.number().int().min(1).max(1000).default(50),
           })
           .parse(req.query);
         const types = p.type ? p.type.split(',').map(collectionParam) : undefined;

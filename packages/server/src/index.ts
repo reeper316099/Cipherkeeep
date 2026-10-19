@@ -21,11 +21,13 @@ export async function startServer(opts: {
   port?: number;
   watch?: boolean;
   logger?: boolean;
+  /** Built web bundle to serve (desktop app). */
+  staticDir?: string;
 }): Promise<RunningServer> {
   const token = opts.token ?? randomBytes(32).toString('base64url');
   const ctx = await createContext({ dataDir: opts.dataDir, watch: opts.watch });
   try {
-    const app = await buildApp({ ctx, token, logger: opts.logger });
+    const app = await buildApp({ ctx, token, logger: opts.logger, staticDir: opts.staticDir });
     await app.listen({ host: '127.0.0.1', port: opts.port ?? 0 });
     const addr = app.server.address();
     const port = typeof addr === 'object' && addr ? addr.port : 0;

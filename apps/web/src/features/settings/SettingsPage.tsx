@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { Dialog } from '../../components/Dialog';
 import { api, type Settings } from '../../lib/api';
 import { keys, useSaveSettings, useSettings } from '../../lib/queries';
 import { ACCENT_PRESETS } from '../../lib/theme';
@@ -19,6 +20,8 @@ export function SettingsPage() {
   const qc = useQueryClient();
   const backups = useQuery({ queryKey: keys.backups, queryFn: () => api<Backup[]>('/backups') });
   const [custom, setCustom] = useState('');
+  const [move, setMove] = useState<{ target: string; copy: boolean; error?: string } | null>(null);
+  const desktop = window.cipherkeep;
   const s = settings.data;
   if (!s) return <div className="pad">Loading…</div>;
   const upd = (p: Partial<Settings>) => save.mutate({ ...s, ...p });
@@ -153,6 +156,32 @@ export function SettingsPage() {
             tokens, AWS keys, private keys. Patterns with nested quantifiers are skipped.
           </span>
         </section>
+        {desktop?.dataDir && (
+          <section className="card" aria-label="Data folder">
+            <h2 style={{ margin: 0, fontSize: 14 }}>Data folder</h2>
+            <code className="mono" style={{ wordBreak: 'break-all' }}>
+              {desktop.dataDir}
+            </code>
+            <div className="rowflex">
+              <button className="btn" onClick={() => void desktop.openDataFolder?.()}>
+                Show in file manager
+              </button>
+              <button
+                className="btn"
+                onClick={async () => {
+                  const p = await desktop.pickFolder?.();
+                  if (p) setMove({ target: p, copy: true });
+                }}
+              >
+                Change…
+              </button>
+            </div>
+            <span className="faint" style={{ fontSize: 12 }}>
+              Everything lives here as plain JSON and Markdown. Set CIPHERKEEP_DATA_DIR to override
+              it for a single launch.
+            </span>
+          </section>
+        )}
         <section className="card">
           <h2 style={{ margin: 0, fontSize: 14 }}>Backups</h2>
           <div className="rowflex">
@@ -184,6 +213,51 @@ export function SettingsPage() {
           </table>
         </section>
       </div>
+      {move && (
+        <Dialog
+          title="Move data folder"
+          onClose={() => setMove(null)}
+          footer={
+            <>
+              <button className="btn" onClick={() => setMove(null)}>
+                Cancel
+              </button>
+              <button
+                className="btn primary"
+                onClick={async () => {
+                  const r = await desktop?.setDataFolder?.(move.target, move.copy);
+                  if (r && !r.ok) setMove({ ...move, error: r.reason });
+                }}
+              >
+                Move and restart
+              </button>
+            </>
+          }
+        >
+          <div className="dialog-body">
+            <span>New folder:</span>
+            <code className="mono" style={{ wordBreak: 'break-all' }}>
+              {move.target}
+            </code>
+            <label className="rowflex">
+              <input
+                type="checkbox"
+                checked={move.copy}
+                onChange={(e) => setMove({ ...move, copy: e.target.checked })}
+              />{' '}
+              Copy my current data there first (recommended)
+            </label>
+            <span className="faint" style={{ fontSize: 12 }}>
+              The app restarts on the new folder. Your old folder is left untouched.
+            </span>
+            {move.error && (
+              <div role="alert" style={{ color: 'var(--danger)' }}>
+                {move.error}
+              </div>
+            )}
+          </div>
+        </Dialog>
+      )}
     </div>
   );
 }

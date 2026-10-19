@@ -27,7 +27,7 @@ Per domain, 0–100: concepts ≤ 35 (difficulty × confidence, saturating at 6)
 
 ## Threat level
 
-`score = 10 × days since last activity + 2 × cards overdue > 3 days (max 20) − 3 × streak days (max 14)`. LOW < 20, MODERATE < 50, ELEVATED < 90, HIGH otherwise. Only creating, editing, studying and lab work count as activity; importing does not. Days follow your local timezone.
+`score = 10 × days since last activity + 2 × cards overdue > 3 days (max 20) − 3 × streak days (max 14)`. LOW < 20, MODERATE < 50, ELEVATED < 90, HIGH otherwise. Only creating, editing, studying and lab work count as activity; importing does not. With content but no activity yet it counts as 3 idle days (MODERATE); a completely empty profile is simply LOW. Days follow your local timezone.
 
 ## Recommendations
 

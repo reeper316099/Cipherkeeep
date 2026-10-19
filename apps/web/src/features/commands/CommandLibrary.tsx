@@ -299,7 +299,15 @@ export function CommandLibrary() {
           aria-activedescendant={id ? `cmd-${id}` : undefined}
         >
           {all.isLoading && <div className="empty">Loading…</div>}
-          {!all.isLoading && list.length === 0 && (
+          {search.isError && (
+            <div className="empty" role="alert">
+              <h3>Search failed</h3>
+              <span>
+                The search service returned an error. Clear the search box to see everything.
+              </span>
+            </div>
+          )}
+          {!all.isLoading && !search.isError && list.length === 0 && (
             <div className="empty">
               <h3>{(all.data?.length ?? 0) === 0 ? 'No commands yet' : 'Nothing matches'}</h3>
               {(all.data?.length ?? 0) === 0 ? (

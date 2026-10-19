@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
-import { api, ApiError } from '../../lib/api';
+import { api, ApiError, downloadExport } from '../../lib/api';
 import { useUI } from '../../lib/store';
 
 interface Preview {
@@ -95,9 +95,17 @@ export function ImportPage() {
       toast('Import undone');
     });
 
+  const [priv, setPriv] = useState(false);
+  const exportFile = (path: string, name: string) =>
+    run(async () => {
+      await downloadExport(path, name);
+      toast(`Exported ${name}`);
+    });
+  const q = priv ? '?includePrivate=true' : '';
+
   return (
     <div className="pad">
-      <h1 className="page-title">Import</h1>
+      <h1 className="page-title">Import & export</h1>
       <div className="settings-grid" style={{ maxWidth: 820 }}>
         <section className="card">
           <p style={{ margin: 0 }} className="muted">
@@ -257,6 +265,54 @@ export function ImportPage() {
             </div>
           </section>
         )}
+
+        <section className="card" aria-label="Export">
+          <h2 style={{ margin: 0, fontSize: 15 }}>Export</h2>
+          <p className="muted" style={{ margin: 0 }}>
+            Your data is already plain JSON and Markdown files in the data folder. These exports are
+            for moving it elsewhere or keeping a copy.
+          </p>
+          <label className="rowflex" style={{ gap: 6 }}>
+            <input type="checkbox" checked={priv} onChange={(e) => setPriv(e.target.checked)} />{' '}
+            Include private lab writeups
+          </label>
+          <div className="rowflex">
+            <button
+              className="btn"
+              disabled={busy}
+              onClick={() => exportFile(`/export/markdown${q}`, 'cipherkeep-vault.zip')}
+            >
+              Markdown vault (Obsidian) .zip
+            </button>
+            <button
+              className="btn"
+              disabled={busy}
+              onClick={() => exportFile(`/export/json${q}`, 'cipherkeep-backup.json')}
+            >
+              Full JSON backup
+            </button>
+          </div>
+          <div className="rowflex" role="group" aria-label="CSV exports">
+            <span className="faint" style={{ fontSize: 12 }}>
+              CSV:
+            </span>
+            {['commands', 'concepts', 'labs', 'projects', 'log', 'notes', 'snippets'].map((c) => (
+              <button
+                key={c}
+                className="btn"
+                disabled={busy}
+                onClick={() =>
+                  exportFile(
+                    `/export/csv?collection=${c}${priv ? '&includePrivate=true' : ''}`,
+                    `${c}.csv`,
+                  )
+                }
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+        </section>
       </div>
     </div>
   );

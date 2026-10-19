@@ -19,7 +19,15 @@ export interface BackupInfo {
   size: number;
 }
 
-const DEFAULT_EXCLUDE = ['backups', 'exports', 'logs', 'imports', '.quarantine', '.lock'];
+const DEFAULT_EXCLUDE = [
+  'backups',
+  'exports',
+  'logs',
+  'imports',
+  '.quarantine',
+  '.lock',
+  '.electron-session',
+];
 
 /** Rolling zip backups of the whole data directory. */
 export class BackupManager {

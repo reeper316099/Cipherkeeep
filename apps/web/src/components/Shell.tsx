@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { useEffect, useMemo } from 'react';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { APP_NAME } from '@cipherkeep/shared';
 import { useHotkeys } from '../lib/hotkeys';
 import { useOverview } from '../lib/overview';
@@ -47,6 +47,7 @@ export function Shell() {
   const { paletteOpen, setPalette, helpOpen, setHelp, editor, setEditor } = useUI();
   const meta = useMeta();
   const overview = useOverview();
+  const nav = useNavigate();
   const settings = useSettings();
   const save = useSaveSettings();
   useLiveEvents();
@@ -60,6 +61,21 @@ export function Shell() {
     [setPalette, setHelp],
   );
   useHotkeys(hotkeys);
+
+  // Native menu (desktop app): navigate, open the palette, show help, start a new command.
+  useEffect(
+    () =>
+      window.cipherkeep?.onMenu?.((action) => {
+        if (action.startsWith('nav:')) nav(action.slice(4));
+        else if (action === 'palette') setPalette(true);
+        else if (action === 'help') setHelp(true);
+        else if (action === 'new-command') {
+          nav('/commands');
+          setEditor({ mode: 'create' });
+        }
+      }),
+    [nav, setPalette, setHelp, setEditor],
+  );
 
   const s = settings.data;
   const dark = document.documentElement.dataset.theme !== 'light';
@@ -79,9 +95,9 @@ export function Shell() {
             </NavLink>
           ))}
           <div className="nav-label">Data</div>
-          <NavLink to="/import" aria-label="Import">
+          <NavLink to="/import" aria-label="Import and export">
             <IconImport />
-            <span>Import</span>
+            <span>Import / Export</span>
           </NavLink>
           <NavLink to="/settings" aria-label="Settings">
             <IconGear />

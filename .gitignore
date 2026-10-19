@@ -10,3 +10,6 @@ coverage/
 private-fixtures/
 *.private.*
 .dev-data/
+apps/desktop/web/
+playwright-report/
+test-results/

@@ -234,7 +234,7 @@ describe('zip uploads', () => {
     const h2 = await harness();
     try {
       const form = new FormData();
-      form.append('file', new Blob([zip.toBuffer()]), 'export.zip');
+      form.append('file', new Blob([new Uint8Array(zip.toBuffer())]), 'export.zip');
       const res = await fetch(`${h2.s.url}/api/v1/import/preview`, {
         method: 'POST',
         headers: { authorization: `Bearer ${h2.s.token}` },
@@ -262,7 +262,7 @@ describe('zip uploads', () => {
     const h2 = await harness();
     try {
       const form = new FormData();
-      form.append('file', new Blob([zip.toBuffer()]), 'x.zip');
+      form.append('file', new Blob([new Uint8Array(zip.toBuffer())]), 'x.zip');
       const res = await fetch(`${h2.s.url}/api/v1/import/preview`, {
         method: 'POST',
         headers: { authorization: `Bearer ${h2.s.token}` },
@@ -340,7 +340,7 @@ describe('exports and round trips', () => {
     try {
       const { buf } = await download('/export/markdown');
       const form = new FormData();
-      form.append('file', new Blob([buf]), 'vault.zip');
+      form.append('file', new Blob([new Uint8Array(buf)]), 'vault.zip');
       const res = await fetch(`${dst.s.url}/api/v1/import/preview`, {
         method: 'POST',
         headers: { authorization: `Bearer ${dst.s.token}` },
@@ -378,7 +378,7 @@ describe('exports and round trips', () => {
     const dst = await harness();
     try {
       const form = new FormData();
-      form.append('file', new Blob([buf]), 'commands.csv');
+      form.append('file', new Blob([new Uint8Array(buf)]), 'commands.csv');
       form.append('collection', 'commands');
       const res2 = await fetch(`${dst.s.url}/api/v1/import/preview`, {
         method: 'POST',
@@ -419,7 +419,7 @@ describe('exports and round trips', () => {
     const dst = await harness();
     try {
       const form = new FormData();
-      form.append('file', new Blob([buf]), 'backup.json');
+      form.append('file', new Blob([new Uint8Array(buf)]), 'backup.json');
       const res = await fetch(`${dst.s.url}/api/v1/import/preview`, {
         method: 'POST',
         headers: { authorization: `Bearer ${dst.s.token}` },

@@ -3,7 +3,19 @@ import type { Command, Concept, Lab } from '@cipherkeep/shared';
 declare global {
   interface Window {
     /** Injected by the Electron preload via contextBridge. Absent in the dev browser (Vite proxies /api). */
-    cipherkeep?: { apiBase: string; token: string };
+    cipherkeep?: {
+      apiBase: string;
+      token: string;
+      platform?: string;
+      version?: string;
+      dataDir?: string;
+      openExternal?: (url: string) => Promise<boolean>;
+      revealInFolder?: (path: string) => Promise<boolean>;
+      openDataFolder?: () => Promise<void>;
+      pickFolder?: () => Promise<string | null>;
+      setDataFolder?: (target: string, copy: boolean) => Promise<{ ok: boolean; reason?: string }>;
+      onMenu?: (cb: (action: string) => void) => () => void;
+    };
   }
 }
 
@@ -68,6 +80,22 @@ export async function apiBlob(path: string): Promise<Blob> {
   const res = await fetch(url + path, { headers });
   if (!res.ok) throw new ApiError(res.status, 'ERROR', res.statusText);
   return res.blob();
+}
+
+/** Download an export through the authenticated API and hand it to the browser/OS save flow. */
+export async function downloadExport(path: string, fallbackName: string): Promise<void> {
+  const { url, headers } = base();
+  const res = await fetch(url + path, { headers });
+  if (!res.ok) throw new ApiError(res.status, 'ERROR', res.statusText);
+  const name =
+    /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? fallbackName;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(await res.blob());
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
 }
 
 export interface ListResponse<T> {

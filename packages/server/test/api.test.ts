@@ -204,6 +204,13 @@ describe('search', () => {
     expect((await h.req('GET', '/commands?q=lsdemo')).json.items).toHaveLength(1);
   });
 
+  it('accepts the large page size the command library asks for, restricted to one type', async () => {
+    const r = await h.req('GET', '/search?q=lsdemo&type=commands&limit=500');
+    expect(r.status).toBe(200);
+    expect(r.json.hits.map((x: { type: string }) => x.type)).toEqual(['commands']);
+    expect((await h.req('GET', '/search?q=x&limit=1001')).status).toBe(400);
+  });
+
   it('stays current after deletes', async () => {
     const id = (await h.req('GET', '/commands?q=lsdemo')).json.items[0].id;
     await h.req('DELETE', `/commands/${id}`);

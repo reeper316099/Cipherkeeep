@@ -66,6 +66,7 @@ export class NoteRepo extends EventEmitter<RepoEvents> implements Repo {
       this.watcher = chokidar.watch(this.root, {
         ignoreInitial: true,
         ignored: (p) => path.basename(p).startsWith('.'),
+        ignorePermissionErrors: true,
         awaitWriteFinish: { stabilityThreshold: 80, pollInterval: 20 },
       });
       const changed = (p: string) => void this.loadFile(p).catch(() => undefined);
@@ -73,7 +74,11 @@ export class NoteRepo extends EventEmitter<RepoEvents> implements Repo {
         .on('add', changed)
         .on('change', changed)
         .on('unlink', (p) => this.dropFile(p));
-      await new Promise<void>((r) => this.watcher!.once('ready', () => r()));
+      this.watcher.on('error', () => undefined); // unwatchable paths must not crash or stall startup
+      await new Promise<void>((r) => {
+        this.watcher!.once('ready', () => r());
+        setTimeout(r, 5000).unref();
+      });
     }
   }
 
