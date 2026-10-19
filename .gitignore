@@ -1,0 +1,11 @@
+node_modules/
+dist/
+out/
+release/
+coverage/
+*.log
+.DS_Store
+.env*
+# Real Notion export / personal data: never commit
+private-fixtures/
+*.private.*
