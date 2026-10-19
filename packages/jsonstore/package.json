@@ -9,5 +9,12 @@
   "exports": {
     ".": "./src/index.ts"
   },
-  "dependencies": {}
+  "dependencies": {
+    "adm-zip": "^0.5.16",
+    "chokidar": "^4.0.3"
+  },
+  "devDependencies": {
+    "@types/adm-zip": "^0.5.7",
+    "zod": "^3.24.1"
+  }
 }
