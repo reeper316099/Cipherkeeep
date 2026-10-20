@@ -13,6 +13,8 @@ export default defineConfig({
             'apps/desktop/test/**/*.test.ts',
           ],
           environment: 'node',
+          // Hosted Windows runners are several times slower than a laptop.
+          testTimeout: 30_000,
         },
       },
       {

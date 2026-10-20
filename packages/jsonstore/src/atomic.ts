@@ -18,6 +18,22 @@ export function stableStringify(value: unknown): string {
   return JSON.stringify(sort(value), null, 2) + '\n';
 }
 
+/**
+ * Read a file that another process may be finishing a write to. Windows reports a briefly locked file as
+ * EBUSY/EPERM/EACCES; a watcher that gives up on the first failure would miss the edit for good.
+ */
+export async function readFileRetry(file: string, tries = 6, delayMs = 50): Promise<Buffer> {
+  for (let i = 1; ; i++) {
+    try {
+      return await fs.readFile(file);
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (i >= tries || !['EBUSY', 'EPERM', 'EACCES'].includes(code ?? '')) throw e;
+      await new Promise((r) => setTimeout(r, delayMs * i));
+    }
+  }
+}
+
 /** Write to a temp file in the same dir, fsync, then rename over the target. */
 export async function atomicWriteFile(file: string, data: string | Uint8Array): Promise<void> {
   const dir = path.dirname(file);

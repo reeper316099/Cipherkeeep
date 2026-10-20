@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import chokidar, { type FSWatcher } from 'chokidar';
-import { atomicWriteFile, stableStringify } from './atomic.ts';
+import { atomicWriteFile, readFileRetry, stableStringify } from './atomic.ts';
 import type { BackupManager } from './backup.ts';
 import { CodecHolder, EncryptionError } from './codec.ts';
 import { JsonStoreError, jsonErrorLine } from './errors.ts';
@@ -219,7 +219,7 @@ export class JsonFile<T> {
       let raw: Buffer;
       let text: string;
       try {
-        raw = await fs.readFile(this.path);
+        raw = await readFileRetry(this.path);
       } catch {
         return;
       }

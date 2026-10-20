@@ -5,6 +5,15 @@ import path from 'node:path';
 import { resolveDataDir } from '../src/index.ts';
 import { harness } from './helpers.ts';
 
+/** Fails with a name instead of a bare timeout, so a CI log says which step never happened. */
+const step = <T>(label: string, p: Promise<T>, ms = 10_000): Promise<T> =>
+  Promise.race([
+    p,
+    new Promise<never>((_, rej) =>
+      setTimeout(() => rej(new Error(`never happened: ${label}`)), ms).unref(),
+    ),
+  ]);
+
 describe('persistence & live reload', () => {
   it('survives restart and enforces the single-instance lock', async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'ck-persist-'));
@@ -33,13 +42,13 @@ describe('persistence & live reload', () => {
       doc.data.items[0].explanation = 'edited by hand';
       const changed = new Promise<void>((r) => h.s.ctx.bus.once('reload', () => r()));
       await writeFile(file, JSON.stringify(doc));
-      await changed;
+      await step('reload event after a valid hand edit to the JSON shard', changed);
       expect((await h.req('GET', `/commands/${c.id}`)).json.explanation).toBe('edited by hand');
       expect((await h.req('GET', '/search?q=cmd:rm')).json.hits).toHaveLength(1);
 
       const bad = new Promise<{ line?: number }>((r) => h.s.ctx.bus.once('invalid', r));
       await writeFile(file, '{\n "schemaVersion": 1,\n oops');
-      expect((await bad).line).toBeTypeOf('number');
+      expect((await step('invalid event after a broken hand edit', bad)).line).toBeTypeOf('number');
       expect((await h.req('GET', `/commands/${c.id}`)).json.explanation).toBe('edited by hand');
 
       const n = (await h.req('POST', '/notes', { title: 'Live', markdown: 'one' })).json;
@@ -48,7 +57,7 @@ describe('persistence & live reload', () => {
         h.s.ctx.repos.notes.on('upsert', (e) => e.markdown === 'two' && r()),
       );
       await writeFile(nf, (await readFile(nf, 'utf8')).replace('one', 'two'));
-      await up;
+      await step('note upsert after a hand edit to the .md file', up);
       expect((await h.req('GET', `/notes/${n.id}`)).json.markdown).toBe('two');
       await h.stop();
     } finally {

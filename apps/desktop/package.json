@@ -7,6 +7,7 @@
     "name": "Cipherkeep contributors",
     "email": "cipherkeep@users.noreply.github.com"
   },
+  "homepage": "https://github.com/reeper316099/Cipherkeeep",
   "license": "MIT",
   "private": true,
   "type": "commonjs",

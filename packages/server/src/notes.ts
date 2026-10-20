@@ -10,6 +10,7 @@ import {
   PlainCodec,
   atomicWriteFile,
   isEncrypted,
+  readFileRetry,
   type Codec,
 } from '@cipherkeep/jsonstore';
 import { NoteSchema, type Note } from '@cipherkeep/shared';
@@ -118,7 +119,7 @@ export class NoteRepo extends EventEmitter<RepoEvents> implements Repo {
   }
 
   private async loadFile(abs: string, quiet = false): Promise<void> {
-    const raw = await fs.readFile(abs);
+    const raw = await readFileRetry(abs);
     if (this.written.get(abs) === sha(raw)) return;
     let text: string;
     try {
