@@ -100,7 +100,8 @@ export class JsonStore extends EventEmitter<StoreEvents> {
       awaitWriteFinish: { stabilityThreshold: 80, pollInterval: 20 },
     });
     const onChange = (p: string) => {
-      const rel = path.relative(this.dir, p);
+      // Files are registered under forward-slash names; Windows reports backslashes.
+      const rel = path.relative(this.dir, p).split(path.sep).join('/');
       const f = this.files.get(rel);
       if (f) void f.reloadExternal();
     };

@@ -130,7 +130,7 @@ export class NoteRepo extends EventEmitter<RepoEvents> implements Repo {
     }
     const sealed = isEncrypted(raw);
     if (this.codec.encrypting && !sealed) this.plainSeen++;
-    const rel = path.relative(this.root, abs);
+    const rel = path.relative(this.root, abs).split(path.sep).join('/');
     const { data, body } = parseFrontmatter(text);
     const now = new Date().toISOString();
     const pathFolder = path.dirname(rel) === '.' ? '' : path.dirname(rel).split(path.sep).join('/');
@@ -159,7 +159,7 @@ export class NoteRepo extends EventEmitter<RepoEvents> implements Repo {
   }
 
   private dropFile(abs: string): void {
-    const rel = path.relative(this.root, abs);
+    const rel = path.relative(this.root, abs).split(path.sep).join('/');
     for (const [id, v] of this.byId) {
       if (v.rel === rel) {
         this.byId.delete(id);

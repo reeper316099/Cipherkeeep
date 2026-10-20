@@ -29,7 +29,7 @@ export async function recodeLooseFiles(ctx: Context, from: Codec, to: Codec): Pr
   let changed = 0;
   for await (const abs of walk(ctx.dataDir)) {
     if (abs.startsWith(notesRoot + path.sep) || open.has(abs)) continue;
-    const rel = path.relative(ctx.dataDir, abs);
+    const rel = path.relative(ctx.dataDir, abs).split(path.sep).join('/');
     if (abs.endsWith('.jsonl')) {
       // Append-only logs: convert line by line under the same lock the writers use.
       const did = await ctx.store.mutex.run(rel, async () => {
