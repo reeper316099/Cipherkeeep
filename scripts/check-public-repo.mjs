@@ -27,10 +27,10 @@ const SECRET_PATTERNS = [
   ['AWS access key', /\bAKIA[0-9A-Z]{16}\b/],
   ['GitHub token', /\bgh[pousr]_[A-Za-z0-9]{30,}\b/],
   ['Notion token', /\b(?:ntn_|secret_)[A-Za-z0-9]{30,}\b/],
-  ['API secret key (sk-…)', /\bsk-[A-Za-z0-9_-]{24,}\b/],
+  ['API secret key (sk-...)', /\bsk-[A-Za-z0-9_-]{24,}\b/],
   ['Slack token', /\bxox[abprs]-[A-Za-z0-9-]{10,}\b/],
   ['Google API key', /\bAIza[0-9A-Za-z_-]{35}\b/],
-  ['private key block', /-----BEGIN [A-Z ]*PRIVATE KEY-----\s*[A-Za-z0-9+/=\s]{60,}/],
+  ['private key block', new RegExp('-----BEGIN [A-Z ]*PRIVATE KEY-----\\s*[A-Za-z0-9+/=\\s]{60,}')],
 ];
 
 /** Returns violations for text that looks like it contains a real credential. */

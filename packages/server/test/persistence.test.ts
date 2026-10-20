@@ -54,7 +54,8 @@ describe('persistence & live reload', () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
-  });
+    // Windows file watchers are slow; three sequential reloads need more than the 5 s default.
+  }, 30_000);
 });
 
 describe('resolveDataDir', () => {

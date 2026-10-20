@@ -33,6 +33,8 @@ nsis:
 portable:
   artifactName: ${productName}-${version}-win-${arch}-portable.${ext}
 linux:
+  # The default comes from the npm package name (@cipherkeep/desktop), which is not a valid file name.
+  executableName: cipherkeep
   category: Education
   maintainer: Cipherkeep contributors <cipherkeep@users.noreply.github.com>
   synopsis: Offline cybersecurity learning notes
