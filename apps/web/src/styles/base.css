@@ -75,8 +75,24 @@ a {
   filter: blur(7px);
   transition: filter var(--dur);
 }
-.blur-sensitive [data-sensitive]:hover {
+.blur-sensitive [data-sensitive]:hover,
+.blur-sensitive [data-sensitive]:focus-within,
+.blur-sensitive [data-sensitive]:focus {
   filter: none;
+}
+.skip-link {
+  position: absolute;
+  left: 8px;
+  top: -48px;
+  z-index: 1000;
+  padding: 8px 14px;
+  background: var(--accent);
+  color: var(--on-accent);
+  border-radius: 6px;
+  font-weight: 600;
+}
+.skip-link:focus {
+  top: 8px;
 }
 @media (prefers-reduced-motion: reduce) {
   *,

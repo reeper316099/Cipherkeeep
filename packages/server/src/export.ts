@@ -5,6 +5,7 @@ import Papa from 'papaparse';
 import YAML from 'yaml';
 import { z } from 'zod';
 import { COLLECTIONS, SCHEMAS, APP_NAME, type CollectionName } from '@cipherkeep/shared';
+import { readDecoded } from '@cipherkeep/jsonstore';
 import type { Context } from './context.ts';
 import type { Entity } from './repo.ts';
 
@@ -255,7 +256,10 @@ export async function exportMarkdown(ctx: Context, o: ExportOptions = {}): Promi
     for (const ent of ents) {
       if (ent.isDirectory()) await addDir(path.join(dir, ent.name), `${prefix}/${ent.name}`);
       else if (ent.isFile())
-        zip.addFile(`${prefix}/${ent.name}`, await fs.readFile(path.join(dir, ent.name)));
+        zip.addFile(
+          `${prefix}/${ent.name}`,
+          await readDecoded(ctx.store.codec, path.join(dir, ent.name)),
+        );
     }
   };
   await addDir(ctx.store.abs('attachments'), 'attachments');

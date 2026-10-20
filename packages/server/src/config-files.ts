@@ -8,6 +8,8 @@ export const SettingsSchema = z
     density: z.enum(['comfortable', 'compact']).default('comfortable'),
     storeFlagsInLabs: z.boolean().default(false),
     blurSensitive: z.boolean().default(false),
+    /** Allow importing straight from the Notion API (contacts api.notion.com during an import only). */
+    notionApiEnabled: z.boolean().default(false),
     vimMode: z.boolean().default(false),
     backupKeep: z.number().int().min(1).max(200).default(20),
     backupIntervalHours: z.number().min(1).max(168).default(6),

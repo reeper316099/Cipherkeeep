@@ -51,7 +51,7 @@ function Calendar({
           ›
         </button>
       </div>
-      <div className="cal-grid" role="grid" aria-label="Learning log calendar">
+      <div className="cal-grid" role="group" aria-label="Learning log calendar">
         {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => (
           <span key={i} className="cal-h" aria-hidden="true">
             {d}
@@ -352,7 +352,7 @@ function LogEditor({ entry }: { entry: LogEntry }) {
         value={e.labIds}
         onChange={(v) => set('labIds', v)}
       />
-      <section className="stack" style={{ gap: 6 }}>
+      <section className="stack" style={{ gap: 6 }} data-sensitive>
         <h2>Notes (learned · insight · questions · review later)</h2>
         <MarkdownEditor
           label="Log notes"

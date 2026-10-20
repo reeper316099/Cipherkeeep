@@ -2,6 +2,7 @@ import { Dialog } from './Dialog';
 
 const KEYS: [string, string][] = [
   ['Ctrl/⌘ + K', 'Command palette: type a command, Enter copies its primary example'],
+  ['Ctrl/⌘ + Shift + B', 'Toggle blur on sensitive content (for screen sharing)'],
   ['/', 'Focus search'],
   ['N', 'New command'],
   ['E', 'Edit the selected command'],

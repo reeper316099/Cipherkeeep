@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { APP_NAME } from '@cipherkeep/shared';
 import { useHotkeys } from '../lib/hotkeys';
@@ -51,12 +51,22 @@ export function Shell() {
   const settings = useSettings();
   const save = useSaveSettings();
   useLiveEvents();
+  const settingsRef = useRef(settings.data);
+  settingsRef.current = settings.data;
+  const saveRef = useRef(save.mutate);
+  saveRef.current = save.mutate;
 
   const hotkeys = useMemo(
     () => ({
       'mod+k': () => setPalette(!useUI.getState().paletteOpen),
       '?': () => setHelp(true),
       'shift+?': () => setHelp(true),
+      // Ctrl/Cmd+Shift+B toggles blur for screen sharing.
+      'mod+b': (e: KeyboardEvent) => {
+        if (!e.shiftKey || !settingsRef.current) return;
+        const cur = settingsRef.current;
+        saveRef.current({ ...cur, blurSensitive: !cur.blurSensitive });
+      },
     }),
     [setPalette, setHelp],
   );
@@ -81,6 +91,9 @@ export function Shell() {
   const dark = document.documentElement.dataset.theme !== 'light';
   return (
     <div className="app">
+      <a className="skip-link" href="#main">
+        Skip to main content
+      </a>
       <aside className="sidebar" aria-label="Primary">
         <div className="brand">
           <div className="brand-mark">ck</div>
@@ -161,7 +174,7 @@ export function Shell() {
             <IconHelp />
           </button>
         </header>
-        <main className="page" style={{ padding: 0, overflow: 'hidden' }} id="main">
+        <main className="page" style={{ padding: 0, overflow: 'hidden' }} id="main" tabIndex={-1}>
           <Outlet />
         </main>
       </div>

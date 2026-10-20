@@ -27,6 +27,7 @@ export function PlaceholderBar({ names }: { names: string[] }) {
                 type={sens && !reveal[n] ? 'password' : 'text'}
                 autoComplete="off"
                 spellCheck={false}
+                data-sensitive
                 value={values[n] ?? ''}
                 placeholder={`<${n}>`}
                 onChange={(e) => setValue(n, e.target.value)}

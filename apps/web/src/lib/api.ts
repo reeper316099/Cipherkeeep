@@ -19,6 +19,9 @@ declare global {
   }
 }
 
+/** Fired when the server answers 423: the library was locked (or is still locked) and needs a passphrase. */
+export const LOCKED_EVENT = 'ck-locked';
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -54,6 +57,7 @@ export async function api<T>(
     body = JSON.stringify(init.json);
   }
   const res = await fetch(url + path, { ...init, headers: h, body });
+  if (res.status === 423) window.dispatchEvent(new Event(LOCKED_EVENT));
   if (res.status === 204) return undefined as T;
   const text = await res.text();
   const data = text ? (JSON.parse(text) as unknown) : null;
@@ -105,12 +109,13 @@ export interface ListResponse<T> {
   offset: number;
 }
 
-/** Every entity in a collection (pages of 500). */
-export async function listAll<T>(collection: string): Promise<T[]> {
+/** Every entity in a collection (pages of 500). `omit` leaves bulky fields out of each item. */
+export async function listAll<T>(collection: string, omit?: string[]): Promise<T[]> {
   const out: T[] = [];
+  const skip = omit?.length ? `&omit=${omit.join(',')}` : '';
   for (let offset = 0; ; offset += 500) {
     const page = await api<ListResponse<T>>(
-      `/${collection}?limit=500&offset=${offset}&archived=all&sort=title`,
+      `/${collection}?limit=500&offset=${offset}&archived=all&sort=title${skip}`,
     );
     out.push(...page.items);
     if (out.length >= page.total || page.items.length === 0) return out;
@@ -140,6 +145,7 @@ export interface Settings {
   density: 'comfortable' | 'compact';
   storeFlagsInLabs: boolean;
   blurSensitive: boolean;
+  notionApiEnabled: boolean;
   vimMode: boolean;
   backupKeep: number;
   backupIntervalHours: number;

@@ -25,10 +25,13 @@ export interface EntityMap {
 }
 export type EntityName = CollectionName;
 
+/** Note bodies dominate list size at 10k notes; the editor fetches the full note on demand. */
+const LIST_OMIT: Partial<Record<EntityName, string[]>> = { notes: ['markdown'] };
+
 export function useEntities<K extends EntityName>(name: K) {
   return useQuery({
     queryKey: ['coll', name],
-    queryFn: () => listAll<EntityMap[K]>(name),
+    queryFn: () => listAll<EntityMap[K]>(name, LIST_OMIT[name]),
     staleTime: 30_000,
   });
 }
@@ -38,7 +41,8 @@ export function useTitleIndex() {
   const results = useQueries({
     queries: COLLECTIONS.map((c) => ({
       queryKey: ['coll', c],
-      queryFn: () => listAll<{ id: string; title: string; name?: string; archived: boolean }>(c),
+      queryFn: () =>
+        listAll<{ id: string; title: string; name?: string; archived: boolean }>(c, LIST_OMIT[c]),
       staleTime: 30_000,
     })),
   });
@@ -88,6 +92,15 @@ export function useEntityMutations<K extends EntityName>(name: K) {
       onSuccess: refresh,
     }),
   };
+}
+
+/** One full entity (list responses may omit bulky fields). */
+export function useEntity<K extends EntityName>(name: K, id: string | undefined) {
+  return useQuery({
+    queryKey: ['coll', name, 'item', id],
+    queryFn: () => api<EntityMap[K]>(`/${name}/${id}`),
+    enabled: !!id,
+  });
 }
 
 export interface LinkRef {

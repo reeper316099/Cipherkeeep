@@ -15,6 +15,7 @@ import { StudyPage } from './features/study/StudyPage';
 import { SnippetsPage } from './features/snippets/SnippetsPage';
 import { ImportPage } from './features/import/ImportPage';
 import { SettingsPage } from './features/settings/SettingsPage';
+import { VaultGate } from './features/vault/VaultGate';
 import { useSettings } from './lib/queries';
 import { applyTheme } from './lib/theme';
 
@@ -35,25 +36,27 @@ function ThemeSync() {
 export function App() {
   return (
     <HashRouter>
-      <ThemeSync />
-      <Routes>
-        <Route element={<Shell />}>
-          <Route index element={<Dashboard />} />
-          <Route path="commands/:id?" element={<CommandLibrary />} />
-          <Route path="import" element={<ImportPage />} />
-          <Route path="settings" element={<SettingsPage />} />
-          <Route path="graph" element={<GraphPage />} />
-          <Route path="study" element={<StudyPage />} />
-          <Route path="questions" element={<QuestionsPage />} />
-          <Route path="concepts/:id?" element={<ConceptsPage />} />
-          <Route path="labs/:id?" element={<LabsPage />} />
-          <Route path="projects/:id?" element={<ProjectsPage />} />
-          <Route path="log/:id?" element={<LogPage />} />
-          <Route path="notes/:id?" element={<NotesPage />} />
-          <Route path="snippets/:id?" element={<SnippetsPage />} />
-          <Route path="*" element={<ComingSoon title="Not found" milestone="—" />} />
-        </Route>
-      </Routes>
+      <VaultGate>
+        <ThemeSync />
+        <Routes>
+          <Route element={<Shell />}>
+            <Route index element={<Dashboard />} />
+            <Route path="commands/:id?" element={<CommandLibrary />} />
+            <Route path="import" element={<ImportPage />} />
+            <Route path="settings" element={<SettingsPage />} />
+            <Route path="graph" element={<GraphPage />} />
+            <Route path="study" element={<StudyPage />} />
+            <Route path="questions" element={<QuestionsPage />} />
+            <Route path="concepts/:id?" element={<ConceptsPage />} />
+            <Route path="labs/:id?" element={<LabsPage />} />
+            <Route path="projects/:id?" element={<ProjectsPage />} />
+            <Route path="log/:id?" element={<LogPage />} />
+            <Route path="notes/:id?" element={<NotesPage />} />
+            <Route path="snippets/:id?" element={<SnippetsPage />} />
+            <Route path="*" element={<ComingSoon title="Not found" milestone="—" />} />
+          </Route>
+        </Routes>
+      </VaultGate>
     </HashRouter>
   );
 }

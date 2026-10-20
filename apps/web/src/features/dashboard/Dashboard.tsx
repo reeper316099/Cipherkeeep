@@ -16,6 +16,7 @@ import {
 import { APP_NAME } from '@cipherkeep/shared';
 import { buildHeatGrid } from '../../lib/heatmap';
 import { useOverview, useTokens, type Overview } from '../../lib/overview';
+import { useStarterPack } from '../StarterPackCard';
 
 const fmtDay = (d: string) =>
   new Date(`${d}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -86,6 +87,7 @@ export function Heatmap({ heat }: { heat: Overview['heatmap'] }) {
 export function Dashboard() {
   const { data: o, isLoading, error } = useOverview();
   const tk = useTokens();
+  const starter = useStarterPack();
   if (isLoading || !o)
     return <div className="pad">{error ? 'Could not load the dashboard.' : 'Loading…'}</div>;
   const empty = Object.values(o.counts).every((n) => n === 0);
@@ -145,17 +147,38 @@ export function Dashboard() {
         </section>
 
         {empty && (
-          <section className="card empty span-12" style={{ gridColumn: 'span 12' }}>
-            <h3>Your {APP_NAME} is empty</h3>
-            <span>Bring in your Notion export, or add your first command.</span>
-            <div className="rowflex">
+          <section
+            className="card empty span-12"
+            style={{ gridColumn: 'span 12' }}
+            aria-label="Get started"
+          >
+            <h3>Welcome to {APP_NAME}</h3>
+            <span>
+              Start with your own notes or with ready-made content. Everything stays on this
+              computer.
+            </span>
+            <div className="rowflex" style={{ justifyContent: 'center' }}>
               <Link className="btn primary" to="/import">
-                Import Notion export
+                Import my Notion export
               </Link>
+              <button
+                className="btn primary"
+                onClick={() => void starter.load()}
+                disabled={starter.busy}
+              >
+                Start with the starter pack
+              </button>
               <Link className="btn" to="/commands">
-                Open command library
+                Start empty
               </Link>
             </div>
+            {starter.info && (
+              <span className="faint" style={{ fontSize: 12 }}>
+                The starter pack: {starter.info.counts.commands} commands,{' '}
+                {starter.info.counts.concepts} concepts, {starter.info.counts.notes} cheat sheets
+                and guides, {starter.info.counts.labs} practice labs, all original.
+              </span>
+            )}
           </section>
         )}
 

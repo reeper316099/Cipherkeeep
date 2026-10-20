@@ -44,7 +44,7 @@ export function MasterDetail<T>({
           className="lib-list"
           ref={ref}
           tabIndex={0}
-          role="listbox"
+          role={items.length ? 'listbox' : 'group'}
           aria-label={label}
           onKeyDown={(e) => {
             if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {

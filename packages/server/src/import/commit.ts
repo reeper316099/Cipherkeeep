@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { ulid } from 'ulid';
-import { atomicWriteFile, atomicWriteJson } from '@cipherkeep/jsonstore';
+import { readTextDecoded, writeEncoded, writeJsonEncoded } from '@cipherkeep/jsonstore';
 import { COLLECTIONS, SCHEMAS, normalizeTitle, type CollectionName } from '@cipherkeep/shared';
 import type { Context } from '../context.ts';
 import type { Entity } from '../repo.ts';
@@ -218,13 +218,13 @@ export async function commitPlan(
     const file = ctx.store.abs(`config/templates/${t.collection}.json`);
     let before: string | null = null;
     try {
-      before = await fs.readFile(file, 'utf8');
+      before = await readTextDecoded(ctx.store.codec, file);
     } catch {
       /* none yet */
     }
     if (before && opts.strategy !== 'overwrite') continue;
     manifest.templates.push({ collection: t.collection, before });
-    await atomicWriteJson(file, t.template);
+    await writeJsonEncoded(ctx.store.codec, file, t.template);
     written.push(t.collection);
   }
 
@@ -241,7 +241,7 @@ export async function commitPlan(
       } catch {
         /* new file */
       }
-      await atomicWriteFile(target, data);
+      await writeEncoded(ctx.store.codec, target, data);
       manifest.attachments.push(path.join('attachments', ...a.to.split('/')));
       copied++;
     }
@@ -269,10 +269,11 @@ export async function commitPlan(
       .map((i) => ({ collection: i.collection, title: i.title, warnings: i.warnings })),
     snapshot,
   };
-  await atomicWriteJson(path.join(dir, 'manifest.json'), manifest);
-  await atomicWriteJson(path.join(dir, 'report.json'), report);
+  await writeJsonEncoded(ctx.store.codec, path.join(dir, 'manifest.json'), manifest);
+  await writeJsonEncoded(ctx.store.codec, path.join(dir, 'report.json'), report);
   if (source?.zip)
-    await atomicWriteFile(
+    await writeEncoded(
+      ctx.store.codec,
       path.join(dir, source.zipName?.replace(/[^\w. -]/g, '_') || 'source.zip'),
       source.zip,
     );
@@ -287,7 +288,7 @@ export async function undoImport(
   const file = path.join(ctx.dataDir, 'imports', importIdParam, 'manifest.json');
   let manifest: ImportManifest;
   try {
-    manifest = JSON.parse(await fs.readFile(file, 'utf8')) as ImportManifest;
+    manifest = JSON.parse(await readTextDecoded(ctx.store.codec, file)) as ImportManifest;
   } catch {
     throw notFound('import', importIdParam);
   }
@@ -308,11 +309,11 @@ export async function undoImport(
   for (const t of manifest.templates) {
     const f = ctx.store.abs(`config/templates/${t.collection}.json`);
     if (t.before === null) await fs.rm(f, { force: true });
-    else await atomicWriteFile(f, t.before);
+    else await writeEncoded(ctx.store.codec, f, t.before);
   }
   for (const a of manifest.attachments) await fs.rm(ctx.store.abs(a), { force: true });
   manifest.undone = new Date().toISOString();
-  await atomicWriteJson(file, manifest);
+  await writeJsonEncoded(ctx.store.codec, file, manifest);
   return { removed, restored };
 }
 
@@ -328,7 +329,9 @@ export async function listImports(ctx: Context): Promise<ImportReport[]> {
   for (const n of names.sort().reverse()) {
     try {
       out.push(
-        JSON.parse(await fs.readFile(path.join(dir, n, 'report.json'), 'utf8')) as ImportReport,
+        JSON.parse(
+          await readTextDecoded(ctx.store.codec, path.join(dir, n, 'report.json')),
+        ) as ImportReport,
       );
     } catch {
       /* skip */

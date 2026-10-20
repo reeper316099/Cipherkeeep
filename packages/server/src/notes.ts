@@ -5,12 +5,18 @@ import path from 'node:path';
 import chokidar, { type FSWatcher } from 'chokidar';
 import YAML from 'yaml';
 import { ulid } from 'ulid';
-import { atomicWriteFile } from '@cipherkeep/jsonstore';
+import {
+  EncryptionError,
+  PlainCodec,
+  atomicWriteFile,
+  isEncrypted,
+  type Codec,
+} from '@cipherkeep/jsonstore';
 import { NoteSchema, type Note } from '@cipherkeep/shared';
 import { inputSchemas, type Entity, type Repo, type RepoEvents } from './repo.ts';
-import { AppError, notFound, slugify } from './util.ts';
+import { AppError, mapPool, notFound, slugify } from './util.ts';
 
-const sha = (s: string) => createHash('sha1').update(s).digest('hex');
+const sha = (s: string | Uint8Array) => createHash('sha1').update(s).digest('hex');
 
 export function parseFrontmatter(text: string): { data: Record<string, unknown>; body: string } {
   const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(text);
@@ -22,10 +28,13 @@ export function parseFrontmatter(text: string): { data: Record<string, unknown>;
   };
 }
 
-export function serializeNote(n: Note): string {
-  const { markdown, folder: _folder, slug: _slug, ...fm } = n;
-  void _folder;
-  void _slug;
+/**
+ * Plain notes get their folder and slug from the path. Encrypted notes live at `_enc/<id>.md` (so file names
+ * reveal nothing), and carry folder and slug inside the encrypted frontmatter instead (`keepPath`).
+ */
+export function serializeNote(n: Note, keepPath = false): string {
+  const { markdown, folder, slug, ...rest } = n;
+  const fm = keepPath ? { ...rest, folder, slug } : rest;
   const clean = Object.fromEntries(Object.entries(fm).filter(([, v]) => v !== undefined));
   return `---\n${YAML.stringify(clean).trimEnd()}\n---\n${markdown}`;
 }
@@ -48,9 +57,13 @@ export class NoteRepo extends EventEmitter<RepoEvents> implements Repo {
   private watcher?: FSWatcher;
   private schemas = inputSchemas('notes');
 
+  /** Plain notes seen while encrypting (an interrupted switch, or a restored older backup). */
+  plainSeen = 0;
+
   constructor(
     private readonly dataDir: string,
     private readonly watch = true,
+    private readonly codec: Codec = new PlainCodec(),
   ) {
     super();
   }
@@ -77,7 +90,7 @@ export class NoteRepo extends EventEmitter<RepoEvents> implements Repo {
       this.watcher.on('error', () => undefined); // unwatchable paths must not crash or stall startup
       await new Promise<void>((r) => {
         this.watcher!.once('ready', () => r());
-        setTimeout(r, 5000).unref();
+        setTimeout(r, 1500).unref(); // big libraries keep indexing in the background; live reload starts when it is done
       });
     }
   }
@@ -86,23 +99,43 @@ export class NoteRepo extends EventEmitter<RepoEvents> implements Repo {
     await this.watcher?.close();
   }
 
-  private async scan(dir = this.root): Promise<void> {
+  private async listMarkdown(dir: string, out: string[] = []): Promise<string[]> {
+    const subdirs: string[] = [];
     for (const ent of await fs.readdir(dir, { withFileTypes: true })) {
-      const abs = path.join(dir, ent.name);
       if (ent.name.startsWith('.')) continue;
-      if (ent.isDirectory()) await this.scan(abs);
-      else if (ent.name.endsWith('.md')) await this.loadFile(abs, true);
+      const abs = path.join(dir, ent.name);
+      if (ent.isDirectory()) subdirs.push(abs);
+      else if (ent.name.endsWith('.md')) out.push(abs);
     }
+    await mapPool(subdirs, 16, async (d) => void (await this.listMarkdown(d, out)));
+    return out;
+  }
+
+  /** Reads every note with bounded parallelism (10k notes load in a few seconds instead of tens). */
+  private async scan(): Promise<void> {
+    const files = await this.listMarkdown(this.root);
+    await mapPool(files, 48, (f) => this.loadFile(f, true));
   }
 
   private async loadFile(abs: string, quiet = false): Promise<void> {
-    const text = await fs.readFile(abs, 'utf8');
-    if (this.written.get(abs) === sha(text)) return;
+    const raw = await fs.readFile(abs);
+    if (this.written.get(abs) === sha(raw)) return;
+    let text: string;
+    try {
+      text = this.codec.decodeText(raw);
+    } catch (e) {
+      if (e instanceof EncryptionError) return; // locked, or encrypted under another key: leave it alone
+      throw e;
+    }
+    const sealed = isEncrypted(raw);
+    if (this.codec.encrypting && !sealed) this.plainSeen++;
     const rel = path.relative(this.root, abs);
     const { data, body } = parseFrontmatter(text);
     const now = new Date().toISOString();
-    const folder = path.dirname(rel) === '.' ? '' : path.dirname(rel).split(path.sep).join('/');
-    const base = path.basename(rel, '.md');
+    const pathFolder = path.dirname(rel) === '.' ? '' : path.dirname(rel).split(path.sep).join('/');
+    const folder = sealed && typeof data.folder === 'string' ? data.folder : pathFolder;
+    const base =
+      sealed && typeof data.slug === 'string' && data.slug ? data.slug : path.basename(rel, '.md');
     const needsId = typeof data.id !== 'string' || !data.id;
     const candidate = {
       ...data,
@@ -136,9 +169,48 @@ export class NoteRepo extends EventEmitter<RepoEvents> implements Repo {
 
   private async writeFile(n: Note, rel: string): Promise<void> {
     const abs = path.join(this.root, rel);
-    const text = serializeNote(n);
-    this.written.set(abs, sha(text));
-    await atomicWriteFile(abs, text);
+    const raw = this.codec.encodeText(serializeNote(n, this.codec.encrypting));
+    this.written.set(abs, sha(raw));
+    await atomicWriteFile(abs, raw);
+  }
+
+  /** Where a note lives right now: a path-free file when encrypting, otherwise folder/slug.md. */
+  private relFor(folder: string, slug: string, id: string): string {
+    return this.codec.encrypting ? `_enc/${id}.md` : this.uniqueRel(folder, slug, id);
+  }
+
+  /**
+   * Moves every note to the layout the current codec calls for (call after the codec was switched):
+   * encrypted notes to `_enc/<id>.md`, plain notes back to `folder/slug.md`.
+   */
+  async recode(): Promise<void> {
+    for (const [id, cur] of [...this.byId]) {
+      const rel = this.relFor(cur.e.folder, cur.e.slug, id);
+      const next = this.codec.encrypting
+        ? cur.e
+        : { ...cur.e, slug: path.posix.basename(rel, '.md') };
+      await this.writeFile(next, rel);
+      this.byId.set(id, { e: next, rel });
+      if (rel !== cur.rel) {
+        const old = path.join(this.root, cur.rel);
+        this.written.delete(old);
+        await fs.rm(old, { force: true });
+      }
+    }
+    this.plainSeen = 0;
+    await this.pruneEmptyDirs(this.root, true);
+  }
+
+  private async pruneEmptyDirs(dir: string, isRoot = false): Promise<boolean> {
+    let empty = true;
+    for (const ent of await fs.readdir(dir, { withFileTypes: true })) {
+      const abs = path.join(dir, ent.name);
+      if (ent.isDirectory() && !ent.name.startsWith('.')) {
+        if (!(await this.pruneEmptyDirs(abs))) empty = false;
+      } else empty = false;
+    }
+    if (empty && !isRoot) await fs.rmdir(dir).catch(() => undefined);
+    return empty && !isRoot;
   }
 
   private uniqueRel(folder: string, slug: string, selfId?: string): string {
@@ -168,13 +240,14 @@ export class NoteRepo extends EventEmitter<RepoEvents> implements Repo {
     if (!title) throw new AppError(400, 'VALIDATION', 'title is required');
     const now = new Date().toISOString();
     const folder = safeFolder(String(parsed.folder ?? ''));
-    const rel = this.uniqueRel(folder, slugify(title));
+    const id = opts?.id ?? ulid();
+    const rel = this.relFor(folder, slugify(title), id);
     const note = {
       ...parsed,
       title,
       folder,
-      slug: path.posix.basename(rel, '.md'),
-      id: opts?.id ?? ulid(),
+      slug: this.codec.encrypting ? slugify(title) : path.posix.basename(rel, '.md'),
+      id,
       createdAt: now,
       updatedAt: now,
     } as Note;
@@ -192,8 +265,8 @@ export class NoteRepo extends EventEmitter<RepoEvents> implements Repo {
     if (patch.folder !== undefined) merged.folder = safeFolder(String(patch.folder));
     merged.updatedAt = new Date().toISOString();
     const wantSlug = patch.title && !patch.slug ? slugify(String(patch.title)) : cur.e.slug;
-    const rel = this.uniqueRel(merged.folder, wantSlug, id);
-    merged.slug = path.posix.basename(rel, '.md');
+    const rel = this.relFor(merged.folder, wantSlug, id);
+    merged.slug = this.codec.encrypting ? wantSlug : path.posix.basename(rel, '.md');
     await this.writeFile(merged, rel);
     if (rel !== cur.rel) {
       const old = path.join(this.root, cur.rel);
@@ -208,7 +281,7 @@ export class NoteRepo extends EventEmitter<RepoEvents> implements Repo {
   async restore(entity: Entity): Promise<void> {
     const note = entity as unknown as Note;
     const cur = this.byId.get(note.id);
-    const rel = this.uniqueRel(note.folder, note.slug, note.id);
+    const rel = this.relFor(note.folder, note.slug, note.id);
     await this.writeFile(note, rel);
     if (cur && cur.rel !== rel) {
       const old = path.join(this.root, cur.rel);

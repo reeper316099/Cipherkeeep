@@ -179,7 +179,7 @@ export class StudyService {
     await this.d.store.mutex.run(rel, async () => {
       const f = this.d.store.abs(rel);
       await fs.mkdir(path.dirname(f), { recursive: true });
-      await fs.appendFile(f, JSON.stringify(row) + '\n');
+      await fs.appendFile(f, this.d.store.codec.encodeLine(JSON.stringify(row)) + '\n');
     });
   }
 
@@ -198,7 +198,7 @@ export class StudyService {
         );
         for (const l of text.split('\n').filter(Boolean)) {
           try {
-            out.push(JSON.parse(l));
+            out.push(JSON.parse(this.d.store.codec.decodeLine(l)));
           } catch {
             /* torn last line */
           }

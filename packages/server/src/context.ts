@@ -4,6 +4,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import {
   BackupManager,
+  CodecHolder,
   JsonStore,
   acquireInstanceLock,
   atomicWriteJson,
@@ -33,6 +34,8 @@ export const DATA_VERSION = 1;
 export interface Context {
   dataDir: string;
   store: JsonStore;
+  /** At-rest encoding in effect (same object as `store.codec`). */
+  codec: CodecHolder;
   backups: BackupManager;
   repos: Record<CollectionName, Repo>;
   search: SearchIndex;
@@ -48,13 +51,20 @@ export interface Context {
   close(): Promise<void>;
 }
 
-export async function createContext(opts: { dataDir: string; watch?: boolean }): Promise<Context> {
+export async function createContext(opts: {
+  dataDir: string;
+  watch?: boolean;
+  /** Pass a keyed codec to open an encrypted library. */
+  codec?: CodecHolder;
+  /** An instance lock the caller already holds (and will release itself). */
+  lock?: InstanceLock;
+}): Promise<Context> {
   const dataDir = path.resolve(opts.dataDir);
   await fs.mkdir(dataDir, { recursive: true });
-  const lock: InstanceLock = await acquireInstanceLock(dataDir);
+  const lock: InstanceLock = opts.lock ?? (await acquireInstanceLock(dataDir));
   try {
     const backups = new BackupManager({ dataDir, backupDir: path.join(dataDir, 'backups') });
-    const store = new JsonStore(dataDir, backups);
+    const store = new JsonStore(dataDir, backups, opts.codec);
     const bus = new EventEmitter();
     store.on('invalid', (i) => bus.emit('invalid', i));
     store.on('quarantine', (i) => bus.emit('quarantine', i));
@@ -70,7 +80,8 @@ export async function createContext(opts: { dataDir: string; watch?: boolean }):
         createdAt: new Date().toISOString(),
       });
     }
-    await backups.createIfStale(6, 'launch').catch(() => undefined);
+    // Launch backup runs in the background shortly after startup so a big library opens immediately.
+    setTimeout(() => void backups.createIfStale(6, 'launch').catch(() => undefined), 3000).unref();
 
     const settings = await store.open<Settings>('config/settings.json', {
       version: 1,
@@ -92,7 +103,9 @@ export async function createContext(opts: { dataDir: string; watch?: boolean }):
     const repos = {} as Record<CollectionName, Repo>;
     for (const name of COLLECTIONS) {
       repos[name] =
-        name === 'notes' ? new NoteRepo(dataDir, opts.watch ?? true) : new JsonRepo(store, name);
+        name === 'notes'
+          ? new NoteRepo(dataDir, opts.watch ?? true, store.codec)
+          : new JsonRepo(store, name);
       await repos[name].init();
     }
     const search = new SearchIndex();
@@ -110,6 +123,7 @@ export async function createContext(opts: { dataDir: string; watch?: boolean }):
     return {
       dataDir,
       store,
+      codec: store.codec,
       backups,
       repos,
       search,
@@ -126,11 +140,11 @@ export async function createContext(opts: { dataDir: string; watch?: boolean }):
       async close() {
         await store.close();
         for (const name of COLLECTIONS) await repos[name].close?.();
-        await lock.release();
+        if (!opts.lock) await lock.release();
       },
     };
   } catch (err) {
-    await lock.release();
+    if (!opts.lock) await lock.release();
     throw err;
   }
 }

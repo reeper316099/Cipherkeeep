@@ -84,6 +84,19 @@ export function scoreDomains(
   const conceptDomains = new Map<string, string[]>();
   for (const c of data.concepts)
     conceptDomains.set(c.id, domainsFor([c.category, ...c.tags], domains));
+  // work out each entity's domains once, not once per domain (matters with thousands of commands)
+  const commandDomains = new Map<string, Set<string>>(
+    data.commands.map((c) => [c.id, new Set(domainsFor([c.category, ...c.tags], domains))]),
+  );
+  const labDomains = new Map<string, Set<string>>(
+    data.labs.map((l) => [
+      l.id,
+      new Set([
+        ...domainsFor([l.domain ?? '', ...l.tags], domains),
+        ...l.conceptIds.flatMap((id) => conceptDomains.get(id) ?? []),
+      ]),
+    ]),
+  );
   return domains.map((d) => {
     let concepts = 0;
     let commands = 0;
@@ -101,16 +114,14 @@ export function scoreDomains(
       touch(c.updatedAt);
     }
     for (const c of data.commands) {
-      if (c.archived || !domainsFor([c.category, ...c.tags], domains).includes(d.name)) continue;
+      if (c.archived || !commandDomains.get(c.id)!.has(d.name)) continue;
       counts.commands++;
       commands += c.mastery / 3;
       touch(c.lastPracticedAt);
     }
     for (const l of data.labs) {
       if (l.archived) continue;
-      const own = domainsFor([l.domain ?? '', ...l.tags], domains);
-      const viaConcepts = l.conceptIds.flatMap((id) => conceptDomains.get(id) ?? []);
-      if (!new Set([...own, ...viaConcepts]).has(d.name)) continue;
+      if (!labDomains.get(l.id)!.has(d.name)) continue;
       counts.labs++;
       if (l.status === 'Completed') {
         labs += DIFF_LAB[l.difficulty] ?? 1;

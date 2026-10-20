@@ -23,7 +23,7 @@ export class ActivityLog {
     await this.store.mutex.run(rel, async () => {
       const file = this.store.abs(rel);
       await fs.mkdir(path.dirname(file), { recursive: true });
-      await fs.appendFile(file, JSON.stringify({ ts, ...ev }) + '\n');
+      await fs.appendFile(file, this.store.codec.encodeLine(JSON.stringify({ ts, ...ev })) + '\n');
     });
   }
 
@@ -51,7 +51,7 @@ export class ActivityLog {
         .filter(Boolean)
         .flatMap((l) => {
           try {
-            return [JSON.parse(l) as ActivityEvent];
+            return [JSON.parse(this.store.codec.decodeLine(l)) as ActivityEvent];
           } catch {
             return []; // tolerate a torn last line
           }

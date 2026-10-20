@@ -258,9 +258,12 @@ function SnippetEditor({ snippet }: { snippet: Snippet }) {
             aria-label="Code"
             value={s.code ?? ''}
             onChange={(e) => set('code', e.target.value)}
+            data-sensitive
           />
         ) : s.code ? (
-          <MarkdownView source={fence(s.code, s.language === 'text' ? '' : s.language)} />
+          <div data-sensitive>
+            <MarkdownView source={fence(s.code, s.language === 'text' ? '' : s.language)} />
+          </div>
         ) : (
           <span className="faint">No inline code.</span>
         )}

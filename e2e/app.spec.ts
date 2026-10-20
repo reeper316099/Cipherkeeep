@@ -59,7 +59,7 @@ test.describe('first run → import → study → persistence', () => {
     let { app, page } = await launch(env);
 
     // --- security: sandboxed page, token only via the bridge, no remote network ---
-    await expect(page.getByText(/Your Cipherkeep is empty/)).toBeVisible();
+    await expect(page.getByText(/Welcome to Cipherkeep/)).toBeVisible();
     const probe = await page.evaluate(async () => {
       const w = window as unknown as {
         cipherkeep?: { token: string };

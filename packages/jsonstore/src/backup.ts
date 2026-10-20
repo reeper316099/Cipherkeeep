@@ -1,4 +1,7 @@
 import AdmZip from 'adm-zip';
+import { createWriteStream } from 'node:fs';
+import { pipeline } from 'node:stream/promises';
+import yazl from 'yazl';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { atomicWriteFile } from './atomic.ts';
@@ -39,17 +42,31 @@ export class BackupManager {
     this.exclude = new Set([...DEFAULT_EXCLUDE, ...(opts.exclude ?? [])]);
   }
 
+  /**
+   * Streams the data folder into a zip (async deflate, so a big library never blocks the event loop) and
+   * moves it into place atomically.
+   */
   async create(reason: string): Promise<BackupInfo> {
     const { dataDir, backupDir } = this.opts;
-    const zip = new AdmZip();
-    await this.addDir(zip, dataDir, '');
+    const files = await this.collect(dataDir, '');
     const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*$/, '');
     const safe = reason.replace(/[^a-z0-9-]/gi, '-').slice(0, 40);
     let name = `${stamp}-${safe}.zip`;
     for (let n = 1; await exists(path.join(backupDir, name)); n++)
       name = `${stamp}-${safe}-${n}.zip`;
     const file = path.join(backupDir, name);
-    await atomicWriteFile(file, zip.toBuffer());
+    await fs.mkdir(backupDir, { recursive: true });
+    const tmp = `${file}.tmp`;
+    const zip = new yazl.ZipFile();
+    for (const f of files) zip.addFile(f.abs, f.entry);
+    zip.end();
+    try {
+      await pipeline(zip.outputStream, createWriteStream(tmp));
+      await fs.rename(tmp, file);
+    } catch (err) {
+      await fs.rm(tmp, { force: true });
+      throw err;
+    }
     await this.prune();
     return this.info(name);
   }
@@ -109,15 +126,16 @@ export class BackupManager {
     return { name, file, createdAt, reason: m?.[7] ?? '', size: st.size };
   }
 
-  private async addDir(zip: AdmZip, abs: string, rel: string): Promise<void> {
+  private async collect(abs: string, rel: string, out: { abs: string; entry: string }[] = []) {
     for (const ent of await fs.readdir(abs, { withFileTypes: true })) {
       if (!rel && this.exclude.has(ent.name)) continue;
       if (ent.name.endsWith('.tmp')) continue;
       const childRel = rel ? `${rel}/${ent.name}` : ent.name;
       const childAbs = path.join(abs, ent.name);
-      if (ent.isDirectory()) await this.addDir(zip, childAbs, childRel);
-      else if (ent.isFile()) zip.addFile(childRel, await fs.readFile(childAbs));
+      if (ent.isDirectory()) await this.collect(childAbs, childRel, out);
+      else if (ent.isFile()) out.push({ abs: childAbs, entry: childRel });
     }
+    return out;
   }
 }
 

@@ -2,6 +2,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 import { api, ApiError, downloadExport } from '../../lib/api';
 import { useUI } from '../../lib/store';
+import { StarterPackCard } from '../StarterPackCard';
+import { NotionApiCard } from './NotionApiCard';
 
 interface Preview {
   previewId: string;
@@ -266,6 +268,14 @@ export function ImportPage() {
           </section>
         )}
 
+        <StarterPackCard />
+        <NotionApiCard
+          onPreview={(p) => {
+            setReport(null);
+            setOverrides({});
+            setPrev(p as Preview);
+          }}
+        />
         <section className="card" aria-label="Export">
           <h2 style={{ margin: 0, fontSize: 15 }}>Export</h2>
           <p className="muted" style={{ margin: 0 }}>

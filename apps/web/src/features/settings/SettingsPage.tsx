@@ -5,6 +5,7 @@ import { api, type Settings } from '../../lib/api';
 import { keys, useSaveSettings, useSettings } from '../../lib/queries';
 import { ACCENT_PRESETS } from '../../lib/theme';
 import { useUI } from '../../lib/store';
+import { SecurityCard } from '../vault/SecurityCard';
 
 interface Backup {
   name: string;
@@ -93,11 +94,24 @@ export function SettingsPage() {
             Store flags in labs{' '}
             <span className="faint">(off by default; excluded from search and exports)</span>
           </label>
+          <label className="rowflex">
+            <input
+              type="checkbox"
+              checked={s.notionApiEnabled}
+              onChange={(e) => upd({ notionApiEnabled: e.target.checked })}
+            />{' '}
+            Allow importing from the Notion API{' '}
+            <span className="faint">
+              (off by default; the only thing that goes online, and only to api.notion.com during an
+              import)
+            </span>
+          </label>
           <span className="faint" style={{ fontSize: 12 }}>
-            No telemetry, no accounts, no network calls. Placeholder values marked sensitive are
-            never stored.
+            No telemetry and no accounts. Unless you turn on the Notion API import, nothing leaves
+            your computer. Placeholder values marked sensitive are never stored.
           </span>
         </section>
+        <SecurityCard />
         <section className="card">
           <h2 style={{ margin: 0, fontSize: 14 }}>Study</h2>
           <label className="rowflex">

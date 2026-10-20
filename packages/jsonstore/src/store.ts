@@ -5,6 +5,7 @@ import path from 'node:path';
 import chokidar, { type FSWatcher } from 'chokidar';
 import { atomicWriteFile, stableStringify } from './atomic.ts';
 import type { BackupManager } from './backup.ts';
+import { CodecHolder, EncryptionError } from './codec.ts';
 import { JsonStoreError, jsonErrorLine } from './errors.ts';
 import { KeyedMutex } from './mutex.ts';
 
@@ -27,7 +28,7 @@ interface Doc {
   data: unknown;
 }
 
-const sha = (s: string) => createHash('sha1').update(s).digest('hex');
+const sha = (s: string | Uint8Array) => createHash('sha1').update(s).digest('hex');
 
 export interface StoreEvents {
   /** A file was changed on disk by someone else and reloaded. */
@@ -42,12 +43,26 @@ export class JsonStore extends EventEmitter<StoreEvents> {
   readonly mutex = new KeyedMutex();
   private files = new Map<string, JsonFile<unknown>>();
   private watcher?: FSWatcher;
+  /** At-rest encoding for every file this store reads or writes (identity unless encryption is on). */
+  readonly codec: CodecHolder;
 
   constructor(
     readonly dir: string,
     readonly backups?: BackupManager,
+    codec?: CodecHolder,
   ) {
     super();
+    this.codec = codec ?? new CodecHolder();
+  }
+
+  /** Open file handles (the ones with in-memory state). */
+  openFiles(): JsonFile<unknown>[] {
+    return [...this.files.values()];
+  }
+
+  /** Rewrite every open file through the current codec (used when encryption is switched on or off). */
+  async rewriteAll(): Promise<void> {
+    for (const f of this.files.values()) await this.mutex.run(f.rel, () => f.writeLocked(f.data));
   }
 
   abs(rel: string): string {
@@ -95,7 +110,7 @@ export class JsonStore extends EventEmitter<StoreEvents> {
     await new Promise<void>((resolve) => {
       const done = () => resolve();
       this.watcher!.once('ready', done);
-      setTimeout(done, 5000).unref();
+      setTimeout(done, 1500).unref();
     });
   }
 
@@ -126,7 +141,9 @@ export class JsonStore extends EventEmitter<StoreEvents> {
         }
       } catch (err) {
         for (const w of written.reverse()) {
-          await atomicWriteFile(this.abs(w.f.rel), w.prevText).catch(() => undefined);
+          await atomicWriteFile(this.abs(w.f.rel), this.codec.encodeText(w.prevText)).catch(
+            () => undefined,
+          );
           w.f.setState(w.prevData, w.prevText);
         }
         throw err;
@@ -151,10 +168,11 @@ export class JsonFile<T> {
     return this.store.abs(this.rel);
   }
 
-  setState(data: T, text: string): void {
+  /** `text` is the plain JSON; `raw` the bytes as stored (they differ when encrypted). */
+  setState(data: T, text: string, raw: string | Uint8Array = text): void {
     this.data = data;
     this.lastText = text;
-    this.lastHash = sha(text);
+    this.lastHash = sha(raw);
   }
 
   check(candidate: T): T {
@@ -165,11 +183,21 @@ export class JsonFile<T> {
 
   /** Initial load: handles missing, corrupt (quarantine + restore), migration. */
   async load(): Promise<void> {
-    let text: string | null = null;
+    let raw: Buffer | null = null;
     try {
-      text = await fs.readFile(this.path, 'utf8');
+      raw = await fs.readFile(this.path);
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
+    }
+    let text: string | null = null;
+    if (raw) {
+      // A locked or wrongly keyed file is never "corrupt": do not quarantine it or replace it with defaults.
+      try {
+        text = this.store.codec.decodeText(raw);
+      } catch (e) {
+        if (e instanceof EncryptionError) throw new EncryptionError(e.code as never, this.rel);
+        throw e;
+      }
     }
     if (text === null) {
       await this.store.mutex.run(this.rel, () =>
@@ -178,25 +206,35 @@ export class JsonFile<T> {
       return;
     }
     try {
-      await this.ingest(text);
+      await this.ingest(text, false, raw!);
     } catch (err) {
       if (err instanceof JsonStoreError && err.code === 'VERSION_TOO_NEW') throw err;
-      await this.quarantineAndRecover(text);
+      await this.quarantineAndRecover(raw!);
     }
   }
 
   /** Called by the watcher. Invalid hand-edits never replace in-memory state. */
   async reloadExternal(): Promise<void> {
     await this.store.mutex.run(this.rel, async () => {
+      let raw: Buffer;
       let text: string;
       try {
-        text = await fs.readFile(this.path, 'utf8');
+        raw = await fs.readFile(this.path);
       } catch {
         return;
       }
-      if (sha(text) === this.lastHash) return; // our own write
+      if (sha(raw) === this.lastHash) return; // our own write
       try {
-        await this.ingest(text, true);
+        text = this.store.codec.decodeText(raw);
+      } catch (err) {
+        this.store.emit('invalid', {
+          rel: this.rel,
+          message: err instanceof Error ? err.message : String(err),
+        });
+        return;
+      }
+      try {
+        await this.ingest(text, true, raw);
         this.store.emit('reload', this.rel);
       } catch (err) {
         const line = err instanceof JsonStoreError ? err.line : jsonErrorLine(text, err);
@@ -221,12 +259,17 @@ export class JsonFile<T> {
 
   async writeLocked(valid: T): Promise<void> {
     const text = stableStringify({ schemaVersion: this.opts.version, data: valid });
-    await atomicWriteFile(this.path, text);
-    this.setState(valid, text);
+    const raw = this.store.codec.encodeText(text);
+    await atomicWriteFile(this.path, raw);
+    this.setState(valid, text, raw);
   }
 
   /** Parse, migrate and validate `text`; on success replace in-memory state. */
-  private async ingest(text: string, external = false): Promise<void> {
+  private async ingest(
+    text: string,
+    external = false,
+    raw: string | Uint8Array = text,
+  ): Promise<void> {
     let doc: Doc;
     try {
       doc = JSON.parse(text) as Doc;
@@ -266,21 +309,22 @@ export class JsonFile<T> {
       await this.writeLocked(valid);
       return;
     }
-    this.setState(valid, text);
+    this.setState(valid, text, raw);
     void external;
   }
 
-  private async quarantineAndRecover(badText: string): Promise<void> {
+  private async quarantineAndRecover(badRaw: Buffer): Promise<void> {
     const qdir = path.join(this.store.dir, '.quarantine');
     await fs.mkdir(qdir, { recursive: true });
     const movedTo = path.join(qdir, `${this.rel.replace(/[\\/]/g, '__')}.${Date.now()}.bad`);
-    await fs.writeFile(movedTo, badText);
+    await fs.writeFile(movedTo, badRaw);
     await fs.rm(this.path, { force: true });
     let restored = false;
     const bytes = await this.store.backups?.readFromLatest(this.rel);
     if (bytes) {
       try {
-        await this.ingest(bytes.toString('utf8'));
+        const plain = this.store.codec.decodeText(bytes);
+        await this.ingest(plain, false, bytes);
         await this.store.mutex.run(this.rel, () => this.writeLocked(this.data));
         restored = true;
       } catch {

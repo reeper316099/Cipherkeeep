@@ -156,15 +156,21 @@ export function LabsPage() {
                   draggable
                   onDragStart={(e) => e.dataTransfer.setData('text/lab', l.id)}
                   onClick={() => nav(`/labs/${l.id}`)}
-                  tabIndex={0}
-                  role="button"
-                  onKeyDown={(e) => e.key === 'Enter' && nav(`/labs/${l.id}`)}
                 >
                   <div
                     className="rowflex"
                     style={{ justifyContent: 'space-between', flexWrap: 'nowrap' }}
                   >
-                    <b>{l.title}</b>
+                    <button
+                      type="button"
+                      className="card-open"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        nav(`/labs/${l.id}`);
+                      }}
+                    >
+                      {l.title}
+                    </button>
                     {l.writeupPrivate && <span title="Private writeup">🔒</span>}
                   </div>
                   <div className="rowflex" style={{ gap: 4 }}>

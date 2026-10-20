@@ -1367,3 +1367,34 @@ table.flags td:first-child {
   font-size: var(--text-sm);
   color: var(--text-muted);
 }
+
+.card-open {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-weight: 700;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.gate {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  background: var(--bg);
+}
+.gate-card {
+  width: min(420px, 100%);
+  display: grid;
+  gap: 12px;
+}
+.gate-error {
+  color: var(--danger);
+  font-size: 13px;
+}
+.mono {
+  font-family: var(--mono);
+}

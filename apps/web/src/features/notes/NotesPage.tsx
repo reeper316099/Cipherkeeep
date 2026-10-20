@@ -8,7 +8,7 @@ import { MasterDetail } from '../../components/MasterDetail';
 import { QuickCreate } from '../../components/QuickCreate';
 import { SaveBar } from '../../components/SaveBar';
 import { api } from '../../lib/api';
-import { useEntities, useEntityMutations } from '../../lib/entities';
+import { useEntities, useEntity, useEntityMutations } from '../../lib/entities';
 import { buildFolderTree, inFolder, type FolderNode } from '../../lib/folders';
 import { useSettings } from '../../lib/queries';
 import { useDraft } from '../../lib/useDraft';
@@ -143,7 +143,7 @@ export function NotesPage() {
         footer={<span>{list.length} notes</span>}
         detail={
           selected ? (
-            <NoteEditor key={selected.id} note={selected} />
+            <NoteLoader key={selected.id} id={selected.id} />
           ) : (
             <div className="empty detail-empty">
               <h3>Not found</h3>
@@ -159,6 +159,16 @@ export function NotesPage() {
         />
       )}
     </>
+  );
+}
+
+function NoteLoader({ id }: { id: string }) {
+  const { data, isError } = useEntity('notes', id);
+  if (data) return <NoteEditor note={data} />;
+  return (
+    <div className="empty detail-empty">
+      <h3>{isError ? 'Could not load this note' : 'Loading…'}</h3>
+    </div>
   );
 }
 
@@ -279,7 +289,7 @@ function NoteEditor({ note }: { note: Note }) {
           }
         />
       </label>
-      <div className={view === 'split' ? 'editor-split' : ''}>
+      <div className={view === 'split' ? 'editor-split' : ''} data-sensitive>
         {view !== 'preview' && (
           <MarkdownEditor
             label="Note body"
